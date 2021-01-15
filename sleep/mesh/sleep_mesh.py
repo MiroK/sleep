@@ -53,7 +53,7 @@ def build_model(model, geometry_parameters):
     for name in named_lines:
         tag = named_lines[name]
         model.addPhysicalGroup(1, [tag], tag)
-        tags['facet'][tag] = tag
+        tags['facet'][name] = tag
 
     return model, tags
 

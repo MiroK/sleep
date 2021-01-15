@@ -66,26 +66,42 @@ def set_mesh_size(model, tags, mesh_sizes):
     thresholds = []
     field_id = 1
     for name, tag in tags['facet'].items():
-        field.add('Distance', field_id)
-        field.setNumbers(field_id, 'FacesList', [tag])
-        # Then we set the mesh size based on that
-        field_id += 1
-        thresholds.append(field_id)
-        
-        field.add('Threshold', field_id)
-        field.setNumber(field_id, 'IField', field_id-1)
         # User
+        all_okay = True
         for p in ('LcMin', 'LcMax', 'DistMin', 'DistMax'):
             line_sizes = mesh_sizes.get(name, {})
             if line_sizes:
-                size = lines_sizes[p]
+                size = line_sizes[p]
             else:
-                size = mesh_sizes[p]
+                size = mesh_sizes.get(p, -1)
+            all_okay = all_okay and size > 0
+
+        if all_okay:
+            field.add('Distance', field_id)
+            field.setNumbers(field_id, 'FacesList', [tag])
+                    
+            # Then we set the mesh size based on that
+            field_id += 1
+            thresholds.append(field_id)
+            field.add('Threshold', field_id)
+            field.setNumber(field_id, 'IField', field_id-1)
+            
+            # User
+            print('Setting', name, tag, 'field', field_id)
+            for p in ('LcMin', 'LcMax', 'DistMin', 'DistMax'):
+                line_sizes = mesh_sizes.get(name, {})
+                if line_sizes:
+                    size = line_sizes[p]
+                else:
+                    size = mesh_sizes.get(p)
                 
-            field.setNumber(field_id, p, size)
+                field.setNumber(field_id, p, size)
+                print('\t', p, size)
     
-        field_id += 1
+            field_id += 1
     # Combine
+    print('Thresholds', thresholds)
+    
     field.add('Min', field_id)
     field.setNumbers(field_id, 'FieldsList', thresholds)
     field.setAsBackgroundMesh(field_id)
