@@ -74,8 +74,34 @@ if __name__ == '__main__':
     geometry_parameters = {'X': 2, 'YF': 0.5, 'YS': 0.25}
     model, tags = build_model(model, geometry_parameters)
 
-    mesh_sizes = {'DistMin': 0.1, 'DistMax': 1, 'LcMin': 0.1, 'LcMax': 0.2}    
-    set_mesh_size(model, tags, mesh_sizes)
+    # Origin, width, inside, outside sizes
+    sizes = {'F': (0, 0.1, 0.05, 0.2),
+             'I': (0+geometry_parameters['YF']-0.1, 0.2, 0.01, 0.2),
+             'S': (0+geometry_parameters['YF']+geometry_parameters['YS']-0.1, 0.1, 0.2, 0.3)}
+
+    field = model.mesh.field
+    fid = 1
+    boxes = []
+    for (y, w, Vin, Vout) in sizes.values():
+         field.add('Box', fid)
+         field.setNumber(fid, 'XMin', 0)
+         field.setNumber(fid, 'XMax', 0+geometry_parameters['X'])
+         field.setNumber(fid, 'YMin', y)
+         field.setNumber(fid, 'YMax', y+w)
+         field.setNumber(fid, 'VIn', Vin)
+         field.setNumber(fid, 'VOut', Vout)
+
+         boxes.append(fid)
+         fid += 1
+    # Combine
+    field.add('Min', fid)
+    field.setNumbers(fid, 'FieldsList', boxes)    
+    field.setAsBackgroundMesh(fid)
+
+    model.occ.synchronize()
+    
+    gmsh.fltk.initialize()
+    gmsh.fltk.run()
     
     h5_filename = './test/sleep_domain.h5'
     mesh_model2d(model, tags, h5_filename)
