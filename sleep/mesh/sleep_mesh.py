@@ -28,7 +28,7 @@ def build_model(model, geometry_parameters):
     fluid_lines = [factory.addLine(*p) for p in lines]
     interface = [fluid_lines.pop()]
     
-    named_lines = dict(zip(('F_down', 'F_right', 'F_left'), fluid_lines))
+    named_lines = dict(zip(('F_left', 'F_down', 'F_right'), fluid_lines))
     named_lines['I'] = interface[0]
     
     fluid_loop = factory.addCurveLoop(fluid_lines + interface)
@@ -37,7 +37,7 @@ def build_model(model, geometry_parameters):
     # Solid is top
     lines = [(mr, ur), (ur, ul), (ul, ml)]    
     solid_lines = [factory.addLine(*p) for p in lines]
-    named_lines.update(dict(zip(('S_left', 'S_top', 'S_right'), solid_lines)))
+    named_lines.update(dict(zip(('S_right', 'S_top', 'S_left'), solid_lines)))
     
     solid_loop = factory.addCurveLoop(interface + solid_lines)
     solid = factory.addPlaneSurface([solid_loop])
