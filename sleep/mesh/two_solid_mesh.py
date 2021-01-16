@@ -57,8 +57,8 @@ def build_model(model, geometry_parameters):
     solid2 = factory.addPlaneSurface([solid_loop])
 
     factory.synchronize()
-    gmsh.write('foo.geo_unrolled')
-    tags = {'cell': {'F': 1, 'S_top': 2, 'S_bottom': 3},
+    # gmsh.write('foo.geo_unrolled')
+    tags = {'cell': {'F': 1, 'S1': 2, 'S2': 3},
             'facet': {}}
     # Physical tags
     model.addPhysicalGroup(2, [fluid], 1)
@@ -71,6 +71,56 @@ def build_model(model, geometry_parameters):
         tags['facet'][name] = tag
 
     return model, tags
+
+
+def check_markers(cell_f, facet_f, lookup, geometry_params):
+    '''Things are where we expect them'''
+    X, YF, YS1, YS2 = (geometry_parameters[k] for k in ('X', 'YF', 'YS1', 'YS2'))
+    # Check boundary marking first
+    positions = {'F_left': np.array([0., 0.]),
+                 'F_right': np.array([X, 0.]),
+                 'S1_right': np.array([X, 0.5*YF+0.5*YS1]),
+                 'S1_top': np.array([0.5*X, 0.5*YF+YS1]),
+                 'S1_left': np.array([0., 0.5*YF+0.5*YS1]),
+                 'S2_right': np.array([X, -0.5*YF-0.5*YS2]),
+                 'S2_bottom': np.array([0.5*X, -0.5*YF-YS2]),
+                 'S2_left': np.array([0., -0.5*YF-0.5*YS2]),                 
+                 'I_top': np.array([0.5*X, 0.5*YF]),
+                 'I_bottom': np.array([0.5*X, -0.5*YF])
+    }
+
+    mesh = facet_f.mesh()
+    x = mesh.coordinates()
+    
+    mesh.init(1, 0)
+    e2v = mesh.topology()(1, 0)
+    
+    tagged_vertices = lambda tag: np.unique(np.hstack(map(e2v, np.where(facet_f.array() == tag)[0])))
+    center = lambda coord: 0.5*(np.max(coord, axis=0) + np.min(coord, axis=0))
+
+    for tag in positions:
+        target = positions[tag]
+        vertices = x[tagged_vertices(lookup['facet'][tag])] 
+        assert np.linalg.norm(target - center(vertices)) < 1E-13
+    
+    # Now subdomain marking
+    positions = {'F': np.array([0.5*X, 0]),
+                 'S1': np.array([0.5*X, 0.5*YF+0.5*YS1]),
+                 'S2': np.array([0.5*X, -0.5*YF-0.5*YS2])}
+    
+    mesh.init(1, 0)
+    c2v = mesh.topology()(2, 0)
+    
+    tagged_vertices = lambda tag: np.unique(np.hstack(map(c2v, np.where(cell_f.array() == tag)[0])))
+    center = lambda coord: np.array([0.5*(np.min(coord[:, 0]) + np.max(coord[:, 0])),
+                                     0.5*(np.min(coord[:, 1]) + np.max(coord[:, 1]))])
+
+    for tag in positions:
+        target = positions[tag]
+        vertices = x[tagged_vertices(lookup['cell'][tag])] 
+        assert np.linalg.norm(target - center(vertices)) < 1E-13
+                 
+    return True
 
 # --------------------------------------------------------------------
 
@@ -117,15 +167,18 @@ if __name__ == '__main__':
 
     model.occ.synchronize()
     
-    gmsh.fltk.initialize()
-    gmsh.fltk.run()
+    # gmsh.fltk.initialize()
+    # gmsh.fltk.run()
     
     h5_filename = './test/two_solid_domain.h5'
     mesh_model2d(model, tags, h5_filename)
 
     mesh, markers, lookup = load_mesh2d(h5_filename)
+    cell_f, facet_f = markers
+    
+    check_markers(cell_f, facet_f, lookup, geometry_parameters)
     
     gmsh.finalize()
     
-    df.File('./test/two_solid_cells.pvd') << markers[0]
-    df.File('./test/two_solid_facets.pvd') << markers[1]
+    df.File('./test/two_solid_cells.pvd') << cell_f
+    df.File('./test/two_solid_facets.pvd') << facet_f
