@@ -57,6 +57,52 @@ def build_model(model, geometry_parameters):
 
     return model, tags
 
+
+def check_markers(cell_f, facet_f, lookup, geometry_params):
+    '''Things are where we expect them'''
+    X, YF, YS = (geometry_parameters[k] for k in ('X', 'YF', 'YS'))
+    # Check boundary marking first
+    positions = {'F_left': np.array([0., 0.5*YF]),
+                 'F_down': np.array([0.5*X, 0]),
+                 'F_right': np.array([X, 0.5*YF]),
+                 'S_right': np.array([X, YF+0.5*YS]),
+                 'S_top': np.array([0.5*X, YF+YS]),
+                 'S_left': np.array([0., YF+0.5*YS]),
+                 'I': np.array([0.5*X, YF])}
+
+    mesh = facet_f.mesh()
+    x = mesh.coordinates()
+
+    
+    mesh.init(1, 0)
+    e2v = mesh.topology()(1, 0)
+    
+    tagged_vertices = lambda tag: np.unique(np.hstack(map(e2v, np.where(facet_f.array() == tag)[0])))
+    center = lambda coord: 0.5*(np.max(coord, axis=0) + np.min(coord, axis=0))
+
+    for tag in positions:
+        target = positions[tag]
+        vertices = x[tagged_vertices(lookup['facet'][tag])] 
+        assert np.linalg.norm(target - center(vertices)) < 1E-13
+    
+    # Now subdomain marking
+    positions = {'F': np.array([0.5*X, 0.5*YF]),
+                 'S': np.array([0.5*X, YF+0.5*YS])}
+    
+    mesh.init(1, 0)
+    c2v = mesh.topology()(2, 0)
+    
+    tagged_vertices = lambda tag: np.unique(np.hstack(map(c2v, np.where(cell_f.array() == tag)[0])))
+    center = lambda coord: np.array([0.5*(np.min(coord[:, 0]) + np.max(coord[:, 0])),
+                                     0.5*(np.min(coord[:, 1]) + np.max(coord[:, 1]))])
+
+    for tag in positions:
+        target = positions[tag]
+        vertices = x[tagged_vertices(lookup['cell'][tag])] 
+        assert np.linalg.norm(target - center(vertices)) < 1E-13
+                 
+    return True
+
 # --------------------------------------------------------------------
 
 if __name__ == '__main__':
@@ -100,15 +146,18 @@ if __name__ == '__main__':
 
     model.occ.synchronize()
     
-    gmsh.fltk.initialize()
-    gmsh.fltk.run()
+    # gmsh.fltk.initialize()
+    # gmsh.fltk.run()
     
     h5_filename = './test/sleep_domain.h5'
     mesh_model2d(model, tags, h5_filename)
 
     mesh, markers, lookup = load_mesh2d(h5_filename)
+    cell_f, facet_f = markers
+    
+    check_markers(cell_f, facet_f, lookup, geometry_parameters)
     
     gmsh.finalize()
     
-    df.File('./test/sleep_cells.pvd') << markers[0]
-    df.File('./test/sleep_facets.pvd') << markers[1]
+    df.File('./test/sleep_cells.pvd') << cell_f
+    df.File('./test/sleep_facets.pvd') << facet_f
