@@ -117,15 +117,15 @@ if __name__ == '__main__':
 
     model.occ.synchronize()
 
-    gmsh.fltk.initialize()
-    gmsh.fltk.run()
+    # gmsh.fltk.initialize()
+    # gmsh.fltk.run()
     
     h5_filename = './test/turek_domain.h5'
     mesh_model2d(model, tags, h5_filename)
 
-    #mesh, markers, lookup = load_mesh2d(h5_filename)
+    mesh, markers, lookup = load_mesh2d(h5_filename)
+    print lookup
+    gmsh.finalize()
     
-    #gmsh.finalize()
-    
-    #df.File('./test/turek_cells.pvd') << markers[0]
-    #df.File('./test/turek_facets.pvd') << markers[1]
+    df.File('./test/turek_cells.pvd') << markers[0]
+    df.File('./test/turek_facets.pvd') << markers[1]
