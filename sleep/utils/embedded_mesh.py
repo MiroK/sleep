@@ -130,3 +130,97 @@ class EmbeddedMesh(df.Mesh):
             f.set_all(markers[0])
 
         self.marking_function = f
+
+
+def embed_mesh(child_mesh, parent_mesh, TOL=1E-8):
+    '''
+    Provided that child_mesh is some 'restriction' mesh of parent compute 
+    embedding of vertices and cells of child to enitties of parent
+    '''
+    assert child_mesh.topology().dim() < parent_mesh.topology().dim()
+    assert child_mesh.geometry().dim() == parent_mesh.geometry().dim()
+    
+    child_x = child_mesh.coordinates().tolist()
+    tree = child_mesh.bounding_box_tree()
+
+    parent_x = parent_mesh.coordinates()
+    maybe = []
+    # Let's see about vertex emebedding - reduce to candidates
+    for i, xi in enumerate(parent_x):
+        tree.collides(df.Point(xi)) and maybe.append(i)
+    assert maybe
+    maybe_x = parent_x[maybe]
+
+    vertex_mapping = -1*np.ones(len(child_x), dtype=int)
+    tol = child_mesh.hmin()*TOL
+    # Try to compute pairings
+    for child_id, xi in enumerate(child_x):
+        distances = np.linalg.norm(maybe_x - xi, 2, axis=1)
+        j = np.argmin(distances)
+        assert distances[j] < tol
+        parent_id = maybe[j]
+
+        vertex_mapping[child_id] = parent_id
+    # Done
+    assert np.all(vertex_mapping > -1), vertex_mapping
+
+    # Now the candidate entities of parent are those connected to paired
+    # vertices
+    tdim = child_mesh.topology().dim()
+    parent_mesh.init(tdim, 0)
+    parent_mesh.init(0, tdim)
+
+    e2v, v2e = parent_mesh.topology()(tdim, 0), parent_mesh.topology()(0, tdim)
+    inverse_vertex_mapping = dict(zip(vertex_mapping, np.arange(len(vertex_mapping))))
+
+    cell_mapping = -1*np.ones(child_mesh.num_cells(), dtype=int)
+    for idx, child_cell in enumerate(child_mesh.cells()):
+        # The cell is given in terms of vertices
+        as_parent = set(vertex_mapping[child_cell])
+
+        child_cell = set(child_cell)  # Target
+        # Compare to all entities connected to parant_vertices
+        entities = chain(*(v2e(v) for v in as_parent))
+        found = False
+        while not found:
+            entity = next(entities)
+            # Get it in child_numering
+            child_entity = set(inverse_vertex_mapping.get(w, -1) for w in e2v(entity))
+            if child_cell == child_entity:
+                found = True
+                cell_mapping[idx] = entity
+    # Done ? 
+    assert np.all(cell_mapping > -1)
+    
+    # For compatibility these are dicts
+    return {0: dict(enumerate(vertex_mapping)), tdim: dict(enumerate(cell_mapping))}
+    
+# --------------------------------------------------------------------
+
+if __name__ == '__main__':
+    from dolfin import *
+
+    mesh = UnitSquareMesh(64, 32)
+    tmesh = BoundaryMesh(mesh, 'exterior')
+
+    mappings = embed_mesh(tmesh, mesh)
+    # The coordinates match
+    xi, yi = map(list, zip(*mappings[0].items()))
+    assert np.linalg.norm(tmesh.coordinates()[xi] - mesh.coordinates()[yi]) < 1E-13
+
+    # Cells match coordinate by coordinates
+    tx = tmesh.coordinates()
+    x = mesh.coordinates()
+
+    mesh.init(1, 0)
+    e2v = mesh.topology()(1, 0)
+    for ti, tcell in enumerate(tmesh.cells()):
+        # Child coordinates
+        cell = tx[tcell]
+        entity = x[e2v(mappings[1][ti])]
+
+        for xi in cell:
+            assert np.min(np.linalg.norm(entity - xi, 2, axis=1)) < 1E-13, (entity, cell)
+        
+        
+    

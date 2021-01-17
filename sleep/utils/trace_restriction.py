@@ -7,6 +7,7 @@
 # to be able to restrict values to manifolds of codimension 1
 from sleep.utils.fem_eval import DegreeOfFreedom, FEBasisFunction
 from sleep.utils.petsc_matrix import petsc_serial_matrix
+from sleep.utils.embedded_mesh import embed_mesh
 from petsc4py import PETSc
 import dolfin as df
 import numpy as np
@@ -56,8 +57,12 @@ def trace_matrix(V, TV, trace_mesh):
     # If TV's mesh was defined as trace mesh of V
     if mesh.id() in embedding_entity_map:
         assert fdim in embedding_entity_map[mesh.id()]
-        mapping = embedding_entity_map[mesh.id()][fdim]
-
+    else:
+        # Now we need to compute how to embed trace_mesh in mesh of V
+        embedding_entity_map[mesh.id()] = embed_mesh(trace_mesh, mesh)
+        
+    # Now makes sense
+    mapping = embedding_entity_map[mesh.id()][fdim]
 
     mesh.init(fdim, fdim+1)
     f2c = mesh.topology()(fdim, fdim+1)  # Facets of V to cell of V
@@ -188,3 +193,34 @@ if __name__ == '__main__':
     assert sqrt(abs(assemble(e))) < 1E-13
 
     # Now from solid which is the slave side -------------------------
+    # Marking facets just for the purpose of checking by integration
+    solid_facets = MeshFunction('size_t', solid, 1, 0)
+    CompiledSubDomain('near(x[0], 0.5)').mark(solid_facets, 2)
+    # Corresponding suraface integral
+    dI = Measure('ds', domain=solid, subdomain_data=solid_facets, subdomain_id=2)
+    
+    f = Expression('x[0]-4*x[1]', degree=1)
+    # Test putting scalar to primary ---------------------------------
+    S = FunctionSpace(solid, 'CG', 1)
+    us = interpolate(f, S)
+    # NOTE: we are keeping the trace space as with fluid
+    TF = FunctionSpace(interface, 'CG', 1)
+    
+    T = trace_matrix(S, TF, interface)
+    # Now we can tranport
+    Tus = Function(TF)
+    T.mult(us.vector(), Tus.vector())
+
+    e = inner(Tus - f, Tus - f)*dx  # Implied, interface
+    norm = inner(Tus, Tus)*dx
+
+    assert sqrt(abs(assemble(e))) < 1E-13 and sqrt(abs(assemble(norm))) > 0
+
+    # Going back
+    us.vector()[:] *= 0
+    assert us.vector().norm('linf') < 1E-13
+    # We extend by tranpose
+    T.transpmult(Tus.vector(), us.vector())
+    # We put it there correct
+    e = inner(us - f, us - f)*dI
+    assert sqrt(abs(assemble(e))) < 1E-13
