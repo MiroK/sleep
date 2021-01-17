@@ -77,6 +77,63 @@ def build_model(model, geometry_parameters, sizes):
     factory.synchronize()
 
     return model, tags
+
+def check_markers(cell_f, facet_f, lookup, geometry_parameters):
+    '''Things are where we expect them'''
+    # Box
+    X, Y, H, L = (geometry_parameters[k] for k in ('X', 'Y', 'H', 'L'))
+    # Circle and flap
+    r, h, l = (geometry_parameters[k] for k in ('r', 'h', 'l'))
+
+    dx = np.sqrt(r**2 - (0.5*h)**2)
+    # Check boundary marking first
+    positions = {'F_left': np.array([-X, -Y+0.5*H]),
+                 'F_down': np.array([-X+0.5*L, -Y]),
+                 'F_right': np.array([-X+L, -Y+0.5*H]),
+                 'F_top': np.array([-X+0.5*L, -Y+H]),
+                 'S_left': np.array([dx, 0]),
+                 'I_top': np.array([dx+0.5*l, 0.5*h]),
+                 'I_right': np.array([dx+l, 0]),
+                 'I_bottom': np.array([dx+0.5*l, -0.5*h])}
+
+    mesh = facet_f.mesh()
+    x = mesh.coordinates()
+    
+    mesh.init(1, 0)
+    e2v = mesh.topology()(1, 0)
+    
+    tagged_vertices = lambda tag: np.unique(np.hstack(map(e2v, np.where(facet_f.array() == tag)[0])))
+    center = lambda coord: 0.5*(np.max(coord, axis=0) + np.min(coord, axis=0))
+
+    for tag in positions:
+        target = positions[tag]
+        vertices = x[tagged_vertices(lookup['facet'][tag])] 
+        assert np.linalg.norm(target - center(vertices)) < 1E-13
+    # Finally make sure that cirle points are radiues away from center
+    vertices = x[tagged_vertices(lookup['facet']['circle'])] 
+    assert np.all(abs(np.linalg.norm(vertices, 2, axis=1)-r) < 1E-13)
+    
+    # Now subdomain marking
+    positions = {'S': np.array([dx+0.5*l, 0])}
+    
+    mesh.init(1, 0)
+    c2v = mesh.topology()(2, 0)
+    
+    tagged_vertices = lambda tag: np.unique(np.hstack(map(c2v, np.where(cell_f.array() == tag)[0])))
+    center = lambda coord: np.array([0.5*(np.min(coord[:, 0]) + np.max(coord[:, 0])),
+                                     0.5*(np.min(coord[:, 1]) + np.max(coord[:, 1]))])
+
+    unique_tags = set(cell_f.array())
+    for tag in positions:
+        target = positions[tag]
+        unique_tags.remove(lookup['cell'][tag])
+        vertices = x[tagged_vertices(lookup['cell'][tag])] 
+        assert np.linalg.norm(target - center(vertices)) < 1E-13
+
+    fluid_tag, = unique_tags
+    assert lookup['cell']['F'] == fluid_tag
+                 
+    return True
     
 # --------------------------------------------------------------------
 
@@ -122,10 +179,12 @@ if __name__ == '__main__':
     
     h5_filename = './test/turek_domain.h5'
     mesh_model2d(model, tags, h5_filename)
-
-    mesh, markers, lookup = load_mesh2d(h5_filename)
-    print lookup
     gmsh.finalize()
+    
+    mesh, markers, lookup = load_mesh2d(h5_filename)
+    cell_f, facet_f = markers
+    
+    check_markers(cell_f, facet_f, lookup, geometry_params)    
     
     df.File('./test/turek_cells.pvd') << markers[0]
     df.File('./test/turek_facets.pvd') << markers[1]
