@@ -149,6 +149,7 @@ def embed_mesh(child_mesh, parent_mesh, TOL=1E-8):
     for i, xi in enumerate(parent_x):
         tree.collides(df.Point(xi)) and maybe.append(i)
     assert maybe
+    print('Checking {} / {} parent vertices'.format(len(maybe), len(parent_x)))
     maybe_x = parent_x[maybe]
 
     vertex_mapping = -1*np.ones(len(child_x), dtype=int)
