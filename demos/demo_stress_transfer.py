@@ -56,9 +56,14 @@ S2iface.transpmult(TuF.vector(), uS.vector())
 uS0 = get_u(solid)
 
 n = Constant((-1, 0))
+t = Constant((0, 1))
 # Eval some functions now
-es = [inner(uS0 - uS, uS0 - uS)*dI_s,
-      inner(dot(grad(uS0), n) - dot(grad(uS), n),
+es = [inner(uS0 - uS, uS0 - uS)*dI_s, # OK
+      inner(dot(t, dot(grad(uS0), t)) - dot(t, dot(grad(uS), t)),        # Tangent of tangent OK
+            dot(t, dot(grad(uS0), t)) - dot(t, dot(grad(uS), t)))*dI_s,
+      inner(dot(grad(uS0), t) - dot(grad(uS), t),  # Full tangent OK
+            dot(grad(uS0), t) - dot(grad(uS), t))*dI_s,
+      inner(dot(grad(uS0), n) - dot(grad(uS), n),  # Normal a problem
             dot(grad(uS0), n) - dot(grad(uS), n))*dI_s]
 
 for e in es:
