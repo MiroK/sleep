@@ -69,8 +69,6 @@ class EmbeddedMesh(df.Mesh):
                 f.set_all(markers[0])
             
             self.marking_function = f
-            # Declare which tagged cells are found
-            self.tagged_cells = set(markers)
             # https://stackoverflow.com/questions/2491819/how-to-return-a-value-from-init-in-python            
             return None  
 
@@ -131,5 +129,3 @@ class EmbeddedMesh(df.Mesh):
             f.set_all(markers[0])
 
         self.marking_function = f
-        # Declare which tagged cells are found
-        self.tagged_cells = set(markers)

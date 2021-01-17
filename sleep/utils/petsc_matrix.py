@@ -12,7 +12,7 @@ def transpose_matrix(A):
         return At
 
     At = transpose_matrix(df.as_backend_type(A).mat())
-    return PETScMatrix(At)
+    return df.PETScMatrix(At)
 
 
 @contextmanager

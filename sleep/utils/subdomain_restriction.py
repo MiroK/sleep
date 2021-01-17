@@ -104,13 +104,23 @@ if __name__ == '__main__':
     u_fs.vector()[:] *= 0
     assert u_fs.vector().norm('linf') < 1E-13
     # We extend by tranpose
-    E = R.transpmult(u_f.vector(), u_fs.vector())
+    R.transpmult(u_f.vector(), u_fs.vector())
     # We put it there correct
     e = inner(u_fs - u, u_fs - u)*dx_fs(1)
     assert sqrt(abs(assemble(e))) < 1E-13
     # NOTE: we set up a hat so unless on iface the exetended function is 0
     # there will be some contributions of the extension to the cells of the
     # neighbor domain
+
+    # Explict
+    u_fs.vector()[:] *= 0
+    assert u_fs.vector().norm('linf') < 1E-13
+    # We extend by tranpose
+    E = transpose_matrix(R)
+    E.mult(u_f.vector(), u_fs.vector())
+    # We put it there correct
+    e = inner(u_fs - u, u_fs - u)*dx_fs(1)
+    assert sqrt(abs(assemble(e))) < 1E-13
 
     u = Expression(('x[0]+2*x[1]', '-2*x[0]+3*x[1]'), degree=1)
     # Test putting vector to subdomain -------------------------------
