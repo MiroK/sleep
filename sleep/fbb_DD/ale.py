@@ -18,7 +18,7 @@ import ulfy  # https://github.com/MiroK/ulfy
 # mesh smoothing
 
 def solve_ale(V, f, bdries, bcs, parameters):
-    '''Return velocity and pressure'''
+    '''Return displacement'''
     mesh = V.mesh()
     # Let's see about boundary conditions - they need to be specified on
     # every boundary.

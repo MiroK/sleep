@@ -34,3 +34,6 @@ traction bc on the top and velocity bcs on the bottom. Okay?
 - [ ] Solid problem has eta_p.n = 0 and u_p = 0 on left and right, for top
 we set sigma_p.n_p = 0 and p_p = p_E and bottom has fixed displacement
 and prescribed pressure. Okay?
+
+- [ ] The solid problem refers to the one which corresponds to tissue domain.
+What about bcs for the middle solid domain that is the membrane/endfeets
