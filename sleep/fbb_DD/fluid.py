@@ -16,7 +16,7 @@ import ulfy  # https://github.com/MiroK/ulfy
 #
 # is solved on FE space W
 
-def solve_fluid(W, mu, f, bdries, bcs):
+def solve_fluid(W, f, bdries, bcs, parameters):
     '''Return velocity and pressure'''
     mesh = W.mesh()
     assert mesh.geometry().dim() == 2
@@ -47,6 +47,7 @@ def solve_fluid(W, mu, f, bdries, bcs):
 
     assert len(u.ufl_shape) == 1 and len(p.ufl_shape) == 0
     # All but bc terms
+    mu = parameters['mu']
     system = (inner(2*mu*sym(grad(u)), sym(grad(v)))*dx - inner(p, div(v))*dx
               -inner(q, div(u))*dx - inner(f, v)*dx)
     # Handle natural bcs
@@ -153,7 +154,8 @@ if __name__ == '__main__':
     Velm = VectorElement('Lagrange', triangle, 2)
     Qelm = FiniteElement('Lagrange', triangle, 1)
     Welm = MixedElement([Velm, Qelm])
-    
+
+    material_parameters = {'mu': Constant(mu_value)}
     for n in (4, 8, 16, 32, 64):
         mesh = UnitSquareMesh(n, n)
         # Setup similar to coupled problem ...
@@ -172,7 +174,8 @@ if __name__ == '__main__':
                'pressure': [(1, stress_components[1]), (2, stress_components[2])]}
 
         W = FunctionSpace(mesh, Welm)
-        uh, ph = solve_fluid(W, mu=Constant(mu_value), f=forcing, bdries=bdries, bcs=bcs)
+        uh, ph = solve_fluid(W, f=forcing, bdries=bdries, bcs=bcs,
+                             parameters=material_parameters)
         # Errors
         eu = errornorm(u_exact, uh, 'H1', degree_rise=2)
         ep = errornorm(p_exact, ph, 'L2', degree_rise=2)

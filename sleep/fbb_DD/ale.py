@@ -17,7 +17,7 @@ import ulfy  # https://github.com/MiroK/ulfy
 # NOTE kappa here could be some function to further enhance/localize
 # mesh smoothing
 
-def solve_ale(V, f, bdries, bcs, kappa=Constant(1)):
+def solve_ale(V, f, bdries, bcs, parameters):
     '''Return velocity and pressure'''
     mesh = V.mesh()
     # Let's see about boundary conditions - they need to be specified on
@@ -43,6 +43,7 @@ def solve_ale(V, f, bdries, bcs, kappa=Constant(1)):
     u, v = TrialFunction(V), TestFunction(V)
     assert len(u.ufl_shape) == 1
     # All but bc terms
+    kappa = parameters['kappa']
     system = inner(kappa*grad(u), grad(v))*dx - inner(f, v)*dx
     # Handle natural bcs
     n = FacetNormal(mesh)
@@ -114,7 +115,8 @@ if __name__ == '__main__':
 
     # Taylor-Hood
     Velm = VectorElement('Lagrange', triangle, 1)
-    
+
+    parameters = {'kappa': Constant(kappa_value)}
     for n in (4, 8, 16, 32, 64):
         mesh = UnitSquareMesh(n, n)
         # Setup similar to coupled problem ...
@@ -130,7 +132,8 @@ if __name__ == '__main__':
                'neumann': [(1, fluxes[1]), (2, fluxes[2])]}
 
         V = FunctionSpace(mesh, Velm)
-        uh = solve_ale(V, kappa=Constant(kappa_value), f=forcing, bdries=bdries, bcs=bcs)
+        uh = solve_ale(V, f=forcing, bdries=bdries, bcs=bcs,
+                       parameters=parameters)
         # Errors
         eu = errornorm(u_exact, uh, 'H1', degree_rise=2)
         print('|u-uh|_1', eu)
