@@ -41,6 +41,7 @@ def solve_ale(V, f, bdries, bcs, kappa=Constant(1)):
     assert needed == reduce(operator.or_, tags)
                  
     u, v = TrialFunction(V), TestFunction(V)
+    assert len(u.ufl_shape) == 1
     # All but bc terms
     system = inner(kappa*grad(u), grad(v))*dx - inner(f, v)*dx
     # Handle natural bcs
