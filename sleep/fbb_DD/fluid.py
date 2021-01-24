@@ -19,6 +19,7 @@ import ulfy  # https://github.com/MiroK/ulfy
 def solve_fluid(W, mu, f, bdries, bcs):
     '''Return velocity and pressure'''
     mesh = W.mesh()
+    assert mesh.geometry().dim() == 2
     # Let's see about boundary conditions - they need to be specified on
     # every boundary.
     assert all(k in ('dirichlet', 'traction', 'pressure') for k in bcs)
@@ -43,6 +44,8 @@ def solve_fluid(W, mu, f, bdries, bcs):
                  
     u, p = TrialFunctions(W)
     v, q = TestFunctions(W)
+
+    assert len(u.ufl_shape) == 1 and len(p.ufl_shape) == 0
     # All but bc terms
     system = (inner(2*mu*sym(grad(u)), sym(grad(v)))*dx - inner(p, div(v))*dx
               -inner(q, div(u))*dx - inner(f, v)*dx)
@@ -58,7 +61,11 @@ def solve_fluid(W, mu, f, bdries, bcs):
     for tag, value in pressure_bcs:
         R = Constant(((0, -1), (1, 0)))
         tau = dot(R, n)
-        n_part, t_part = value
+        try:
+            n_part, t_part = value
+        except ValueError:
+            n_part, = value
+            t_part = Constant(0)
         system += -(inner(n_part, dot(v, n))*ds(tag) + inner(t_part, dot(v, tau))*ds(tag))
 
     # Dirichlet bcs go onto the matrix
