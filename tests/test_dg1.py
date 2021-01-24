@@ -22,7 +22,7 @@ TV = FunctionSpace(Tmesh, 'DG', 1)
 Tu = Function(TV)
 trace_matrix(V, TV, Tmesh).mult(u.vector(), Tu.vector())
 
-print assemble(inner(f - Tu, f - Tu)*ds) < 1E-13
+assert assemble(inner(f - Tu, f - Tu)*ds) < 1E-13
 
 # What if it is discontinuous in vertices
 class Foo(Expression):

@@ -1,3 +1,5 @@
+# This is taken from FEniCS_ii to keep the code base free of many depen-
+# dencies
 from sleep.utils.make_mesh_cpp import make_mesh
 from collections import defaultdict
 from itertools import chain
@@ -17,14 +19,8 @@ class EmbeddedMesh(df.Mesh):
     def __init__(self, marking_function, markers):
         if not isinstance(markers, (list, tuple)): markers = [markers]
         
-        # Convenience option to specify only subdomains
-        is_number = lambda m: isinstance(m, int)
-        assert all(map(is_number, markers))
-            
         base_mesh = marking_function.mesh()
-
         assert base_mesh.topology().dim() >= marking_function.dim()
-
         # Work in serial only (much like submesh)
         assert df.MPI.size(base_mesh.mpi_comm()) == 1
 
@@ -34,6 +30,8 @@ class EmbeddedMesh(df.Mesh):
 
         assert markers, markers
 
+        # NOTE: treating submesh as a separate case is done for performance
+        # as it seems that pure python as done below is about 2x slower
         # We reuse a lot of Submesh capabilities if marking by cell_f
         if base_mesh.topology().dim() == marking_function.dim():
             # Submesh works only with one marker so we conform
@@ -51,11 +49,11 @@ class EmbeddedMesh(df.Mesh):
 
             # The entity mapping attribute;
             # NOTE: At this point there is not reason to use a dict as
-            # a lookup table
-            mesh_key = marking_function.mesh().id()
+            # a lookup table            
             mapping_0 = submesh.data().array('parent_vertex_indices', 0)
-
             mapping_tdim = submesh.data().array('parent_cell_indices', tdim)
+
+            mesh_key = marking_function.mesh().id()            
             self.parent_entity_map = {mesh_key: {0: dict(enumerate(mapping_0)),
                                                  tdim: dict(enumerate(mapping_tdim))}}
             # Finally it remains to preserve the markers
@@ -70,66 +68,173 @@ class EmbeddedMesh(df.Mesh):
                 f.set_all(markers[0])
             
             self.marking_function = f
+            # Declare which tagged cells are found
+            self.tagged_cells = set(markers)
             # https://stackoverflow.com/questions/2491819/how-to-return-a-value-from-init-in-python            
             return None  
 
         # Otherwise the mesh needs to by build from scratch
-        base_mesh.init(tdim, 0)
-        # Collect unique vertices based on their new-mesh indexing, the cells
-        # of the embedded mesh are defined in terms of their embedded-numbering
-        new_vertices, new_cells = [], []
-        # NOTE: new_vertices is actually new -> old vertex map
-        # Map from cells of embedded mesh to tdim entities of base mesh, and
-        cell_map = []
-        cell_colors = defaultdict(list)  # Preserve the markers
+        _, e2v = (base_mesh.init(tdim, 0), base_mesh.topology()(tdim, 0))
+        entity_values = marking_function.array()
+        colorings = [np.where(entity_values == tag)[0] for tag in markers]
+        # Represent the entities as their vertices
+        tagged_entities = np.hstack(colorings)
 
-        new_cell_index, new_vertex_index = 0, 0
-        for marker in markers:
-            for entity in df.SubsetIterator(marking_function, marker):
-                vs = entity.entities(0)
-                cell = []
-                # Vertex lookup
-                for v in vs:
-                    try:
-                        local = new_vertices.index(v)
-                    except ValueError:
-                        local = new_vertex_index
-                        new_vertices.append(v)
-                        new_vertex_index += 1
-                    # Cell, one by one in terms of vertices
-                    cell.append(local)
-                # The cell
-                new_cells.append(cell)
-                # Into map
-                cell_map.append(entity.index())
-                # Colors
-                cell_colors[marker].append(new_cell_index)
-
-                new_cell_index += 1
-        vertex_coordinates = base_mesh.coordinates()[new_vertices]
-        new_cells = np.array(new_cells, dtype='uintp')
+        tagged_entities_v = np.array([e2v(e) for e in tagged_entities], dtype='uintp')
+        # Unique vertices that make them up are vertices of our mesh
+        tagged_vertices = np.unique(tagged_entities_v.flatten())
+        # Representing the entities in the numbering of the new mesh will
+        # give us the cell makeup
+        mapping = dict(zip(tagged_vertices, range(len(tagged_vertices))))
+        # So these are our new cells
+        tagged_entities_v.ravel()[:] = np.fromiter((mapping[v] for v in tagged_entities_v.flat),
+                                                   dtype='uintp')
         
         # With acquired data build the mesh
         df.Mesh.__init__(self)
         # Fill
-        make_mesh(coordinates=vertex_coordinates, cells=new_cells, tdim=tdim, gdim=gdim,
+        vertex_coordinates = base_mesh.coordinates()[tagged_vertices]
+        make_mesh(coordinates=vertex_coordinates, cells=tagged_entities_v, tdim=tdim, gdim=gdim,
                   mesh=self)
 
         # The entity mapping attribute
         mesh_key = marking_function.mesh().id()
-        self.parent_entity_map = {mesh_key: {0: dict(enumerate(new_vertices)),
-                                             tdim: dict(enumerate(cell_map))}}
+        self.parent_entity_map = {mesh_key: {0: dict(enumerate(tagged_vertices)),
+                                             tdim: dict(enumerate(tagged_entities))}}
 
         f = df.MeshFunction('size_t', self, tdim, 0)
-        f_ = f.array()
-        # Finally the inherited marking function
+        # Finally the inherited marking function. We colored sequentially so
         if len(markers) > 1:
-            for marker, cells in cell_colors.iteritems():
-                f_[cells] = marker
+            f_ = f.array()            
+            offsets = np.cumsum(np.r_[0, list(map(len, colorings))])
+            for i, marker in enumerate(markers):
+                f_[offsets[i]:offsets[i+1]] = marker
         else:
             f.set_all(markers[0])
 
         self.marking_function = f
+        # Declare which tagged cells are found
+        self.tagged_cells = set(markers)
+
+    def compute_embedding(self, other_entity_f, tags, tol=1E-10):
+        '''
+        Compute how self can be viewed as en embeded mesh of other_entity_f.mesh 
+        for entities which have the tag.
+        '''
+        # The use case I have in mind is when we declare [L|R] interface
+        # based on L and in the system assembly the view of I from R is needed.
+        # Then a 'blind' search is needed because we threw away informations.
+        # So that's we avoid here
+        tdim = self.topology().dim()
+        assert tdim == other_entity_f.dim()
+        assert self.geometry().dim() == other_entity_f.mesh().geometry().dim()
+        
+        parent_mesh = other_entity_f.mesh()
+        if parent_mesh.id() in self.parent_entity_map:
+            raise ValueError('There is a mapping for {} already'.format(parent_mesh.id()))
+        
+        # To pair cells with entitities ...
+        c2v = self.topology()(tdim, 0)
+        # Use vertex comparison
+        parent_mesh.init(tdim, 0)
+        e2v = parent_mesh.topology()(tdim, 0)
+
+        if isinstance(tags, int): tags = [tags]
+
+        tagged_entities = np.hstack([np.where(other_entity_f.array() == tag)[0] for tag in tags])
+        assert len(tagged_entities)
+
+        tree = self.bounding_box_tree()        
+        # Collision by coordinates
+        x, x_parent = self.coordinates(), parent_mesh.coordinates()
+
+        entity_mapping, vertex_mapping = {}, {}
+        for entity in tagged_entities:
+            # We need to be able to embed all vertices in order to get a cell
+            entity_vertices = e2v(entity).tolist()
+            # The observation is that in working case there is one cell that
+            # can embedded all vertices of the entity
+            the_cell = set()
+            # The tree collisions can give false positives so shall compare
+            # coordinates with
+            is_reachable = True
+            while is_reachable and entity_vertices:
+                v = entity_vertices.pop()
+                v_cells = tree.compute_collisions(df.Point(x_parent[v]))
+                # True isect is a cell which has v
+                v_cells = [c for c in v_cells if min(np.linalg.norm(x_parent[v] - x[c2v(c)], 2, 1)) < tol]
+
+                # Such cell is for such not the one that collides
+                is_reachable = bool(len(v_cells))            
+                (is_reachable and the_cell) and the_cell.intersection_update(v_cells)
+                (is_reachable and not the_cell) and the_cell.update(v_cells)
+
+            if is_reachable:
+                the_cell, = the_cell  # The uniqueness
+                entity_mapping[the_cell] = entity
+                
+                # And now pair the vertices
+                entity_vertices = e2v(entity).tolist()
+
+                for vp in c2v(the_cell):
+                    if vp not in vertex_mapping:
+                        dist = np.linalg.norm(x[vp] - x_parent[entity_vertices], 2, 1)
+                        i = np.argmin(dist)
+                        assert dist[i] < tol
+                        
+                        vertex_mapping[vp] = entity_vertices[i]
+                    entity_vertices.remove(vertex_mapping[vp])
+
+        self.parent_entity_map[parent_mesh.id()] = {0: vertex_mapping, tdim: entity_mapping}
+
+        return self.parent_entity_map[parent_mesh.id()]
+
+    def translate_markers(self, entity_f, tags=None):
+        '''For entity_f.mesh being parent of self tranlate markers'''
+        assert entity_f.mesh().id() in self.parent_entity_map
+        assert 0 < entity_f.dim() < self.topology().dim()
+        
+        if tags is None:
+            tags = np.unique(entity_f.array())
+        if isinstance(tags, int):
+            tags = (tags, )
+
+        emesh = entity_f.mesh()
+        entity_dim = entity_f.dim()
+        cell_dim = self.topology().dim()
+        # Entity is connected to parent cells, some of these we can map to
+        # from child mesh as cell. Some of its entities is the entity. This
+        # is to be determined by vertices
+        _, e2v_parent = (emesh.init(entity_dim, 0), emesh.topology()(entity_dim, 0))        
+        _, e2c = (emesh.init(entity_dim, cell_dim), emesh.topology()(entity_dim, cell_dim))
+        _, c2e = (self.init(cell_dim, entity_dim), self.topology()(cell_dim, entity_dim))
+        _, e2v = (self.init(entity_dim, 0), self.topology()(entity_dim, 0))        
+
+        ivertex_mapping = dict((v, k) for k, v in self.parent_entity_map[emesh.id()][0].items())
+        icell_mapping = dict((v, k) for k, v in self.parent_entity_map[emesh.id()][cell_dim].items())
+
+        marker_f = df.MeshFunction('size_t', self, entity_dim, 0)
+        for tag in tags:
+            entities, = np.where(entity_f.array() == tag)  # parent
+            # We encode them as vertices in the child
+            as_vertices = [set(ivertex_mapping.get(v, -1) for v in e2v_parent(e)) for e in entities]
+            # The above was an attempt. Continue with those that could be embeded
+            for e, as_vertex in zip(entities, as_vertices):
+                if any(v == -1 for v in as_vertex): continue
+
+                parent_cells = [c for c in e2c(e) if c in icell_mapping]
+
+                found = None
+                while not found and parent_cells:
+                    child_entities = c2e(icell_mapping[parent_cells.pop()])
+                    matches = [e_ for e_ in child_entities if set(e2v(e_)) == as_vertex]
+
+                    found = bool(matches)
+                    e_, = matches
+                    if found:
+                        marker_f[int(e_)] = entity_f[e]
+
+        return marker_f
 
 
 def embed_mesh(child_mesh, parent_mesh, TOL=1E-8):
