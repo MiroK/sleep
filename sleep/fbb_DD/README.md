@@ -48,3 +48,11 @@ like ends of interfaces. However, DirichletBC will evaluate in corner so
 this might be an issue. On the other hand integrating with the transformed
 exprssion on the interface seems okay. Thus using Lagrange multiplier or
 Nitsche coulf help if this becomes a problem.
+
+# Dependencies
+This code is tested with `FEniCS 2017.2.0`. Easiest way to get it is by
+running in the container
+
+'''bash
+fenicsproject run quay.io/fenicsproject/stable:2017.2.0
+'''
