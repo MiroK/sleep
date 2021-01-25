@@ -2,19 +2,22 @@
 
 We solve
 
+```
 -div(sigma_f(u_f, p_f)) = 0    in Omega_f(t)
 -div(u_f)               = 0
 
 -div(sigma_p(eta_p, p_p))                   =  0    in Omega_p(t)
-u_p + kappa*grad(p_p)                       =  0
-d/d_t(s0*p_p + alpla*div(eta_p)) + div(u_p) =  0
-
+u_p + kappa * grad(p_p)                       =  0
+d/d_t(s0 * p_p + alpla * div(eta_p)) + div(u_p) =  0
+```
 with interface boundary conditions  on Gamma(t)
 
+```
 sigma_f.n_f + sigma_p.n_p = 0
 -n_f.sigma_f.n_f = p_p
 u_f.n_f + (d_dt(eta_p) + u_p).n_p = 0
 u_f.tau_f + d_d(eta_p).tau_f = 0
+```
 
 The solution algorithm is based on solving fluid problem on Omega_f(t0),
 transfering data to solid problem which is solved on Omega_p(t0). Then
@@ -53,6 +56,6 @@ Nitsche coulf help if this becomes a problem.
 This code is tested with `FEniCS 2017.2.0`. Easiest way to get it is by
 running in the container
 
-'''bash
+```bash
 fenicsproject run quay.io/fenicsproject/stable:2017.2.0
-'''
+```
