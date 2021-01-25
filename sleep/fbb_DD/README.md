@@ -22,14 +22,16 @@ eta_p together with driving conditions on the bottom fluid wall determine
 the displacement in fluid domain eta_f. Using their respective displacements
 both domains are updated to t0 + dt.
 
-# Questions
+# Questions/TODOs
 
 - [ ] At the moment eta_f is vector and its bcs on bottom wall (boundary with
 blood region) are also expected vectorial. The side boundaries grad(eta_f).n = 0.
 Is this okay?
 
-- [ ] Fluid problem is setup expecting pressure on left and pressure on right,
-traction bc on the top and velocity bcs on the bottom. Okay?
+- [ ] Fluid problem is setup expecting traction bcs on left and pressure on right,
+traction bc on the top and velocity bcs on the bottom. Okay? In particular,
+we specify sigma_f.n.n and sigma_f.n.tau separately. The former is related
+to pressure but it has a contribution from sym(grad(velocity)) too!
 
 - [ ] Solid problem has eta_p.n = 0 and u_p = 0 on left and right, for top
 we set sigma_p.n_p = 0 and p_p = p_E and bottom has fixed displacement
@@ -37,3 +39,6 @@ and prescribed pressure. Okay?
 
 - [ ] The solid problem refers to the one which corresponds to tissue domain.
 What about bcs for the middle solid domain that is the membrane/endfeets
+
+- [ ] For now the solvers are using Cartesian coordinates. For cylinder
+coordinates start see **sleep/sandbox/cyl_domain.py**

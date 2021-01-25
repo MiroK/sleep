@@ -62,7 +62,7 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
     for this, that in itertools.combinations(tags, 2):
         if this and that: assert not this & that
 
-    assert needed == reduce(operator.or_, tags)
+    assert needed == reduce(operator.or_, tags), (needed, reduce(operator.or_, tags))
 
     # Collect bc values for possible temporal update in the integration
     bdry_expressions = sum(([item[1] for item in bc]
