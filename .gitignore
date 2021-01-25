@@ -2,3 +2,6 @@
 *~
 
 /sleep/mesh/test
+
+*.pvd
+*.vtu

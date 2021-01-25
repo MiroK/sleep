@@ -79,34 +79,41 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
     # For weak form also time step is needed
     dt = Constant(parameters['dt'])
 
-    # Elasticity
-    system = (2*mu*inner(sym(grad(eta)), sym(grad(phi)))*dx +
-              inner(lmbda*div(eta), div(phi))*dx -
-              inner(p, alpha*div(phi))*dx-
-              inner(f1, phi)*dx)
+    # Previous solutions
+    wh_0 = Function(W)
+    assign(wh_0.sub(0), interpolate(eta_0, W.sub(0).collapse()))    
+    assign(wh_0.sub(2), interpolate(p_0, W.sub(2).collapse()))
+    eta_0, u_0, p_0 = split(wh_0)
 
+    # Elasticity
+    a = (2*mu*inner(sym(grad(eta)), sym(grad(phi)))*dx +
+         inner(lmbda*div(eta), div(phi))*dx -
+         inner(p, alpha*div(phi))*dx)
+
+    L = inner(f1, phi)*dx
+              
     # Darcy
-    system += (1/kappa)*inner(u, v)*dx - inner(p, div(v))*dx
+    a += (1/kappa)*inner(u, v)*dx - inner(p, div(v))*dx
+         
     # Mass conservation with backward Euler
-    system += (inner(s0*(p-p_0)/dt, q)*dx + inner(alpha*div((eta-eta_0)/dt), q)*dx + inner(div(u), q)*dx
-               -inner(f2, q)*dx)
+    a += inner(s0*p, q)*dx + inner(alpha*div(eta), q)*dx + dt*inner(div(u), q)*dx
+    L += dt*inner(f2, q)*dx + inner(s0*p_0, q)*dx + inner(alpha*div(eta_0), q)*dx         
 
     # Handle natural bcs
     n = FacetNormal(mesh)
     ds = Measure('ds', domain=mesh, subdomain_data=bdries)
     # For elasticity
     for tag, value in traction_bcs:
-        system += -inner(value, phi)*ds(tag)
+        L += inner(value, phi)*ds(tag)
     # For Darcy
     for tag, value in pressure_bcs:
-        system += inner(value, dot(v, n))*ds(tag)
+        L += -inner(value, dot(v, n))*ds(tag)
         
     # Displacement bcs and flux bcs go on the system
     bcs_strong = [DirichletBC(W.sub(0), value, bdries, tag) for tag, value in displacement_bcs]
     bcs_strong.extend([DirichletBC(W.sub(1), value, bdries, tag) for tag, value in flux_bcs])
 
     # Discrete problem
-    a, L = lhs(system), rhs(system)
     assembler = SystemAssembler(a, L, bcs_strong)
 
     A, b = PETScMatrix(), PETScVector()
@@ -114,7 +121,6 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
     assembler.assemble(A)
     solver = LUSolver(A, 'umfpack')
 
-    wh = Function(W)
     # Temporal integration loop
     T0 = parameters['T0']
     for k in range(parameters['nsteps']):
@@ -125,12 +131,9 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
             hasattr(foo, 'time') and setattr(foo, 'time', T0)
 
         assembler.assemble(b)
-        solver.solve(wh.vector(), b)
+        solver.solve(wh_0.vector(), b)
 
-        eta_h, u_h, p_h = wh.split(deepcopy=True)
-
-        eta_0.assign(eta_h)
-        p_0.assign(p_h)
+    eta_h, u_h, p_h = wh_0.split(deepcopy=True)
         
     return eta_h, u_h, p_h, T0
 
@@ -162,9 +165,9 @@ def mms_solid(parameters):
     time_ = sp.Symbol('time')
     # Expressions
     eta_ = sp.Matrix([sp.sin(pi*(x + y)),
-                      sp.cos(pi*(x + y))])
+                      sp.cos(pi*(x + y))])#*sp.exp(1-time_)
 
-    p_ = sp.cos(pi*(x-y))
+    p_ = sp.cos(pi*(x-y))#*sp.exp(1-time_)
 
     # f2 = -(s0*p + alpha*div(eta)) + div(u)
     f2 = div(u)
@@ -215,10 +218,10 @@ if __name__ == '__main__':
 
     Welm = MixedElement([Eelm, Velm, Qelm])
 
-    parameters['dt'] = 0.001
-    parameters['nsteps'] = 5
+    parameters['dt'] = 1E-6
+    parameters['nsteps'] = int(1E-4/parameters['dt'])
     parameters['T0'] = 0.
-    for n in (4, 8, 16, 32, 64):
+    for n in ():#(4, 8, 16, 32, 64):
         mesh = UnitSquareMesh(n, n)
         # Setup similar to coupled problem ...
         bdries = MeshFunction('size_t', mesh, mesh.topology().dim()-1, 0)
@@ -234,18 +237,16 @@ if __name__ == '__main__':
         
         # Elasticity: displacement bottom, traction for rest
         # Darcy: pressure bottom and top, flux on sides
-        bcs = {'elasticity': {'displacement': [(3, eta_exact), (1, eta_exact), (2, eta_exact), (4, eta_exact)],
-                              #'traction': [(1, tractions[1]), (2,tractions[2]), (4, tractions[4])]},
-                              },
-               'darcy': {'pressure': [(1, p_exact), (2, p_exact), (3, p_exact), (4, p_exact)],
-                         #'flux': [(1, u_exact), (2, u_exact)]}}
-                         }}
+        bcs = {'elasticity': {'displacement': [(3, eta_exact)],
+                              'traction': [(1, tractions[1]), (2, tractions[2]), (4, tractions[4])]},
+               'darcy': {'pressure': [(1, p_exact), (2, p_exact)],
+                         'flux': [(3, u_exact), (4, u_exact)]}}
 
         # Get the initial conditions
         E = FunctionSpace(mesh, Eelm)
         Q = FunctionSpace(mesh, Qelm)
 
-        eta_0 = interpolate(u_exact, E)
+        eta_0 = interpolate(eta_exact, E)
         p_0 = interpolate(p_exact, Q)
 
         W = FunctionSpace(mesh, Welm)
@@ -260,6 +261,54 @@ if __name__ == '__main__':
         e_p = errornorm(p_exact, p_h, 'L2', degree_rise=2)        
         print('|eta-eta_h|_1', e_eta, '|u-uh|_div', e_u, '|p-ph|_0', e_p)
 
-        for i, (x, y) in enumerate(zip((eta_h, u_h, p_h), (eta_exact, u_exact, p_exact))):
-            File('x%d_true.pvd' % i) << interpolate(y, x.function_space())
-            File('x%d_numeric.pvd' % i) << x
+
+    # ----
+
+    n = 32
+    mesh = UnitSquareMesh(n, n)
+    # Setup similar to coupled problem ...
+    bdries = MeshFunction('size_t', mesh, mesh.topology().dim()-1, 0)
+    CompiledSubDomain('near(x[0], 0)').mark(bdries, 1)
+    CompiledSubDomain('near(x[0], 1)').mark(bdries, 2)
+    CompiledSubDomain('near(x[1], 0)').mark(bdries, 3)
+    CompiledSubDomain('near(x[1], 1)').mark(bdries, 4)
+
+    dt = 1E-3
+    for _ in range(4):
+        parameters['dt'] = dt
+        parameters['nsteps'] = int(1E-2/dt)
+        parameters['T0'] = 0.
+        
+        # Reset time
+        for things in data.values():
+            for thing in things:
+                thing.time = 0.
+        
+        # Elasticity: displacement bottom, traction for rest
+        # Darcy: pressure bottom and top, flux on sides
+        bcs = {'elasticity': {'displacement': [(3, eta_exact)],
+                              'traction': [(1, tractions[1]), (2, tractions[2]), (4, tractions[4])]},
+               'darcy': {'pressure': [(1, p_exact), (2, p_exact)],
+                         'flux': [(3, u_exact), (4, u_exact)]}}
+
+        # Get the initial conditions
+        E = FunctionSpace(mesh, Eelm)
+        Q = FunctionSpace(mesh, Qelm)
+
+        eta_0 = interpolate(eta_exact, E)
+        p_0 = interpolate(p_exact, Q)
+
+        W = FunctionSpace(mesh, Welm)
+        ans = solve_solid(W, f1, f2, eta_0, p_0, bdries=bdries, bcs=bcs,
+                          parameters=parameters)
+
+        eta_h, u_h, p_h, time = ans
+        eta_exact.time, u_exact.time, p_exact.time = (time, )*3
+        # Errors
+        e_eta = errornorm(eta_exact, eta_h, 'H1', degree_rise=2)        
+        e_u = errornorm(u_exact, u_h, 'Hdiv', degree_rise=2)
+        e_p = errornorm(p_exact, p_h, 'L2', degree_rise=2)
+        print('\tdt=%.2E T=%.2f nsteps=%d' %  (dt, time, parameters['nsteps']))
+        print('|eta-eta_h|_1', e_eta, '|u-uh|_div', e_u, '|p-ph|_0', e_p)
+
+        dt = dt/2
