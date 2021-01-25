@@ -119,14 +119,14 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
     A, b = PETScMatrix(), PETScVector()
     # Assemble once and setup solver for it
     assembler.assemble(A)
-    solver = LUSolver(A, 'umfpack')
+    solver = LUSolver(A, 'mumps')
 
     # Temporal integration loop
     T0 = parameters['T0']
     for k in range(parameters['nsteps']):
         T0 += dt(0)
         # Update source if possible
-        for foo in bdry_expressions:
+        for foo in bdry_expressions + [f1, f2]:
             hasattr(foo, 't') and setattr(foo, 't', T0)
             hasattr(foo, 'time') and setattr(foo, 'time', T0)
 
@@ -165,13 +165,12 @@ def mms_solid(parameters):
     time_ = sp.Symbol('time')
     # Expressions
     eta_ = sp.Matrix([sp.sin(pi*(x + y)),
-                      sp.cos(pi*(x + y))])#*sp.exp(1-time_)
+                      sp.cos(pi*(x + y))])*sp.exp(1-time_)
 
-    p_ = sp.cos(pi*(x-y))#*sp.exp(1-time_)
+    p_ = sp.cos(pi*(x-y))*sp.exp(1-time_)
+    # - here is dbar(t)
+    f2 = -(s0*p + alpha*div(eta)) + div(u)
 
-    # f2 = -(s0*p + alpha*div(eta)) + div(u)
-    f2 = div(u)
-    
     subs = {eta: eta_, p: p_,
             kappa: kappa_, mu: mu_, lmbda: lmbda_, alpha: alpha_, s0: s0_}
 
@@ -221,7 +220,7 @@ if __name__ == '__main__':
     parameters['dt'] = 1E-6
     parameters['nsteps'] = int(1E-4/parameters['dt'])
     parameters['T0'] = 0.
-    for n in ():#(4, 8, 16, 32, 64):
+    for n in (4, 8, 16, 32, 64):
         mesh = UnitSquareMesh(n, n)
         # Setup similar to coupled problem ...
         bdries = MeshFunction('size_t', mesh, mesh.topology().dim()-1, 0)
@@ -259,12 +258,12 @@ if __name__ == '__main__':
         e_eta = errornorm(eta_exact, eta_h, 'H1', degree_rise=2)        
         e_u = errornorm(u_exact, u_h, 'Hdiv', degree_rise=2)
         e_p = errornorm(p_exact, p_h, 'L2', degree_rise=2)        
-        print('|eta-eta_h|_1', e_eta, '|u-uh|_div', e_u, '|p-ph|_0', e_p)
+        print('|eta-eta_h|_1', e_eta, '|u-uh|_div', e_u, '|p-ph|_0', e_p, '#dofs', W.dim())
 
 
     # ----
 
-    n = 32
+    n = 128
     mesh = UnitSquareMesh(n, n)
     # Setup similar to coupled problem ...
     bdries = MeshFunction('size_t', mesh, mesh.topology().dim()-1, 0)
@@ -273,17 +272,17 @@ if __name__ == '__main__':
     CompiledSubDomain('near(x[1], 0)').mark(bdries, 3)
     CompiledSubDomain('near(x[1], 1)').mark(bdries, 4)
 
-    dt = 1E-3
+    dt = 1E-2
     for _ in range(4):
         parameters['dt'] = dt
-        parameters['nsteps'] = int(1E-2/dt)
+        parameters['nsteps'] = int(1E-1/dt)
         parameters['T0'] = 0.
         
         # Reset time
         for things in data.values():
             for thing in things:
                 thing.time = 0.
-        
+
         # Elasticity: displacement bottom, traction for rest
         # Darcy: pressure bottom and top, flux on sides
         bcs = {'elasticity': {'displacement': [(3, eta_exact)],
@@ -308,7 +307,11 @@ if __name__ == '__main__':
         e_eta = errornorm(eta_exact, eta_h, 'H1', degree_rise=2)        
         e_u = errornorm(u_exact, u_h, 'Hdiv', degree_rise=2)
         e_p = errornorm(p_exact, p_h, 'L2', degree_rise=2)
-        print('\tdt=%.2E T=%.2f nsteps=%d' %  (dt, time, parameters['nsteps']))
-        print('|eta-eta_h|_1', e_eta, '|u-uh|_div', e_u, '|p-ph|_0', e_p)
-
+        print('\tdt=%.2E T=%.2f nsteps=%d' %  (dt, p_exact.time, parameters['nsteps']))
+        print('|eta-eta_h|_1', e_eta, '|u-uh|_div', e_u, '|p-ph|_0', e_p, '#dofs', W.dim())
+        
         dt = dt/2
+
+    # for i, (num, true) in enumerate(zip((eta_h, u_h, p_h), (eta_exact, u_exact, p_exact))):
+    #     File('x%d_num.pvd' % i) << num
+    #     File('x%d_true.pvd' % i) << interpolate(true, num.function_space())

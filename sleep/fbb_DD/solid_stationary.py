@@ -212,11 +212,11 @@ if __name__ == '__main__':
         e_p = errornorm(p_exact, p_h, 'L2', degree_rise=2)        
         print('|eta-eta_h|_1', e_eta, '|u-uh|_div', e_u, '|p-ph|_0', e_p)
 
-        File('etah.pvd') << eta_h
-        File('eta.pvd') << interpolate(eta_exact, eta_h.function_space())
+        # File('etah.pvd') << eta_h
+        # File('eta.pvd') << interpolate(eta_exact, eta_h.function_space())
         
-        File('uh.pvd') << u_h
-        File('u.pvd') << interpolate(u_exact, u_h.function_space())
+        # File('uh.pvd') << u_h
+        # File('u.pvd') << interpolate(u_exact, u_h.function_space())
         
-        File('ph.pvd') << p_h
-        File('p.pvd') << interpolate(p_exact, p_h.function_space())
+        # File('ph.pvd') << p_h
+        # File('p.pvd') << interpolate(p_exact, p_h.function_space())
