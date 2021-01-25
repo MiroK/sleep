@@ -110,8 +110,8 @@ solid_parameters['T0'] = 0.
 E = Ws.sub(0).collapse()
 Q = Ws.sub(2).collapse()
 
-eta_0 = interpolate(Constant((0, 0)), E)
-p_0 = interpolate(Constant(0), Q)
+eta_0 = interpolate(Constant((0, 0)), E)  # FIXME
+p_0 = interpolate(Constant(0), Q)  # FIXME
 
 ans = solve_solid(Ws, f1=Constant((0, 0)), f2=Constant(0), eta_0=eta_0, p_0=p_0,
                   bdries=solid_bdries, bcs=bcs_solid, parameters=solid_parameters)

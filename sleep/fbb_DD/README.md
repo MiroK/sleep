@@ -42,3 +42,9 @@ What about bcs for the middle solid domain that is the membrane/endfeets
 
 - [ ] For now the solvers are using Cartesian coordinates. For cylinder
 coordinates start see **sleep/sandbox/cyl_domain.py**
+
+- [ ] Biot uses strong bcs. The way we transfer things from fluid does not
+like ends of interfaces. However, DirichletBC will evaluate in corner so
+this might be an issue. On the other hand integrating with the transformed
+exprssion on the interface seems okay. Thus using Lagrange multiplier or
+Nitsche coulf help if this becomes a problem.
