@@ -180,7 +180,7 @@ class EmbeddedMesh(df.Mesh):
                     if vp not in vertex_mapping:
                         dist = np.linalg.norm(x[vp] - x_parent[entity_vertices], 2, 1)
                         i = np.argmin(dist)
-                        assert dist[i] < tol
+                        assert dist[i] < tol, dist[i]
                         
                         vertex_mapping[vp] = entity_vertices[i]
                     entity_vertices.remove(vertex_mapping[vp])

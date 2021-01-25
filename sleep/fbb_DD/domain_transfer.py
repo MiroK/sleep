@@ -2,19 +2,45 @@ from sleep.utils import EmbeddedMesh, trace_matrix
 from dolfin import *
 
 
+def transfer_into(f, expr, interface, tol=1E-10):
+    '''Transfer into f the expression over interface'''
+    if len(interface) == 2:
+        return transfer_into(f, expr, (interface[0], interface[0], interface[1]))
+
+    bdries1, bdries2, tag = interface
+
+    assert isinstance(f, Function)
+
+    W = f.function_space()
+    mesh = W.mesh()
+    # Need to conform to transder_DD API and fill f
+    if mesh.id() == bdries2.mesh().id(): # So W is not on mesh1
+        V = FunctionSpace(bdries1.mesh(), W.ufl_element())
+        # CHECK: Expect expr to be on mesh2
+        f.vector()[:] = transfer_DD(expr, V, interface, tol).vector()
+        
+        return f
+    # Flip and try
+    return transfer_into(f, expr, (bdries2, bdries1, tag))
+    
+
 def transfer_DD(expr, V, interface, tol=1E-10):
     '''
     Let interface = (bdries-domain-1, bdries-domain-2, shared-bdry-index).
     Using space V defined on bdries-domain-1.mesh() we build a good enough 
     representation of it in V(bdiers-domain-2.mesh()).
     '''
+    if len(interface) == 2:  # Same domain
+        interface = (interface[0], interface[0], interface[1])
+        return transfer_DD(expr, V, interface, tol)
+    
     bdries1, bdries2, tag = interface
     # Share?
     assert tag in set(bdries1.array()) and tag in set(bdries2.array())
     # On first
     mesh1 = bdries1.mesh()
     assert V.mesh().id() == mesh1.id()
-
+    same_mesh = mesh1.id() == bdries2.mesh().id()
     # We assume that the shared surface is on the boundary, duh :). So 
     # the idea is to basically do an L^2 projection of expr onto the trace
     # space of V on the interface
@@ -22,15 +48,18 @@ def transfer_DD(expr, V, interface, tol=1E-10):
     # Rhs of the projection problem that we will need to restrict
     v = TestFunction(V)
     b = assemble(inner(v, expr)*ds_(tag))
+    b_norm = b.norm('l2')
     # The trace space is
     interface = EmbeddedMesh(bdries1, tag)
-    interface.compute_embedding(bdries2, tag, tol)  # Fails if the meshes are far apart
+    not same_mesh and interface.compute_embedding(bdries2, tag, tol)  # Fails if the meshes are far apart
     # The trace space
-    TV = FunctionSpace(interface, V.ufl_element().reconstruct(cell=interface.ufl_cell()))
+    TV = trace_space(V, interface)
 
     Tb = Function(TV).vector()
     # Restrict
-    trace_matrix(V, TV, interface).mult(b, Tb)
+    Rmat = trace_matrix(V, TV, interface)
+    Rmat.mult(b, Tb)
+    Tb_norm = Tb.norm('l2')
     # Lhs of the projection problem
     u, v = TrialFunction(TV), TestFunction(TV)
     M = assemble(inner(u, v)*dx)
@@ -40,13 +69,34 @@ def transfer_DD(expr, V, interface, tol=1E-10):
     # Finally we extend this to V(mesh2). NOTE: it is pretty much only
     # on the interface where the result makes some sense
     mesh2 = bdries2.mesh()
-    V2 = FunctionSpace(mesh2, V.ufl_element().reconstruct(cell=mesh2.ufl_cell()))
+
+    if not same_mesh:
+        V2 = FunctionSpace(mesh2, V.ufl_element().reconstruct(cell=mesh2.ufl_cell()))
+        Rmat = trace_matrix(V2, TV, interface)
+    else:
+        # Already have Rmat
+        V2 = V
     u2 = Function(V2)
     # Extend
-    trace_matrix(V2, TV, interface).transpmult(Texpr.vector(), u2.vector())
+    Rmat.transpmult(Texpr.vector(), u2.vector())
+
+    ds_ = Measure('ds', domain=mesh2, subdomain_data=bdries2)
+    c = assemble(inner(TestFunction(V2), u2)*ds_(tag))
+    c_norm = c.norm('l2')
+
+    info('Transfer |b|->|Tb|->|ETb| = %g %g %g' % (b_norm, Tb_norm, c_norm))
     
     return u2
-    
+
+
+def trace_space(V, interface):
+    '''Trace space of V on the interface'''
+    try:
+        TV = FunctionSpace(interface, V.ufl_element().reconstruct(cell=interface.ufl_cell()))
+        return TV
+    except:
+        raise ValueError('No can do trace space')
+
 # --------------------------------------------------------------------                       
     
 if __name__ == '__main__':
@@ -97,22 +147,36 @@ if __name__ == '__main__':
     expr = dot(sym(grad(u)), n)
     I = VectorFunctionSpace(left, 'DG', 1)  # Intermediate one
     f1 = transfer_DD(expr, I, (left_bdries, right_bdries, 1))
+    f1 = transfer_into(f1, expr, (left_bdries, right_bdries, 1))
 
     # Normal component of traction
     expr = dot(n, dot(sym(grad(u)), n))
     I = FunctionSpace(left, 'DG', 1)  # Intermediate one
     f2 = transfer_DD(expr, I, (left_bdries, right_bdries, 1))
-
+    f2 = transfer_into(f2, expr, (left_bdries, right_bdries, 1))
     # Easy vector
     I = VectorFunctionSpace(left, 'CG', 2)  # Intermediate one
     f3 = transfer_DD(u, I, (left_bdries, right_bdries, 1))
-    
+    f3 = transfer_into(f3, u, (left_bdries, right_bdries, 1))
     # More involved vector
     I = VectorFunctionSpace(left, 'CG', 2)  # Intermediate one
     f4 = transfer_DD(dot(u, n)*n, I, (left_bdries, right_bdries, 1))
+    f4 = transfer_into(f4, dot(u, n)*n, (left_bdries, right_bdries, 1))
+    f4.vector()[:] = 0.
+    f4 = transfer_into(f4, dot(u, n)*n, (right_bdries, left_bdries, 1))    
+    
+    # Let's do one more for the same domain
+    I = VectorFunctionSpace(left, 'CG', 2)  # Intermediate one
+    f5 = transfer_DD(dot(u, n)*n, I, (left_bdries, 1))
+    f5 = transfer_into(f5, dot(u, n)*n, (left_bdries, 1))
+
+    X = FunctionSpace(left, 'RT', 1)
+    u = interpolate(displacement, X)
+    f6 = transfer_DD(dot(u, n)*n, I, (left_bdries, right_bdries, 1))
     
     x = midpoints[:, 1]    
-    for fh, f in zip((f1, f2, f3, f4), (traction, traction_n, displacement, displacement_n)):
+    for fh, f in zip((f1, f2, f3, f4, f5, f6),
+                     (traction, traction_n, displacement, displacement_n, displacement_n, displacement_n)):
         true = np.row_stack([f(mid) for mid in midpoints])
         num = np.row_stack([fh(mid) for mid in midpoints])
 
@@ -129,3 +193,5 @@ if __name__ == '__main__':
 
         print max(np.linalg.norm(true-num, 2, axis=-1))
     plt.show()    
+
+    

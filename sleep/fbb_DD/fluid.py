@@ -18,6 +18,7 @@ import ulfy  # https://github.com/MiroK/ulfy
 
 def solve_fluid(W, f, bdries, bcs, parameters):
     '''Return velocity and pressure'''
+    info('Solving Stokes for %d unknowns' % W.dim())
     mesh = W.mesh()
     assert mesh.geometry().dim() == 2
     # Let's see about boundary conditions - they need to be specified on
@@ -79,7 +80,9 @@ def solve_fluid(W, f, bdries, bcs, parameters):
     # NOTE: this uses direct solver, might be too slow but we know what
     # to do then
     wh = Function(W)
+    timer = Timer('Stokes')
     solve(A, wh.vector(), b)
+    info('  Stokes done in %f secs |uh|=%g' % (timer.stop(), wh.vector().norm('l2')))    
 
     return wh.split(deepcopy=True)
 

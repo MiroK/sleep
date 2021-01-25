@@ -1,9 +1,9 @@
-from sleep.utils import EmbeddedMesh
-from sleep.mesh import load_mesh2d
-
+from sleep.fbb_DD.domain_transfer import transfer_into
 from sleep.fbb_DD.solid import solve_solid
 from sleep.fbb_DD.fluid import solve_fluid
 from sleep.fbb_DD.ale import solve_ale
+from sleep.utils import EmbeddedMesh
+from sleep.mesh import load_mesh2d
 from dolfin import *
 
 h5_filename = '../mesh/test/fbb_domain.h5'
@@ -46,15 +46,14 @@ CoefSpace = FunctionSpace(mesh_s, 'DG', 0)
 q = TestFunction(CoefSpace)
 
 for coef in ('kappa', 'mu', 'lmbda', 'alpha', 's0'):
-    two, three = '%s_2' % coef, '%s_3' % coef
     # Remove
-    two = solid_parameters.pop(two)
-    three = solid_parameters.pop(three)
+    two = solid_parameters.pop('%s_2' % coef)
+    three = solid_parameters.pop('%s_3' % coef)
 
-    form = (1/CellVolume(mesh_s))*two*q*dxSolid(2) + (1/CellVolume(mesh_s))*three*q*dxSolid(3)
-    coef_function = Function(CoefSpace, assemble(form))
-
-    solid_parameters[coef] = coef_function
+    form = ((1/CellVolume(mesh_s))*two*q*dxSolid(cell_lookup['S1']) +
+            (1/CellVolume(mesh_s))*three*q*dxSolid(cell_lookup['S2']))
+    
+    solid_parameters[coef] = Function(CoefSpace, assemble(form))
     
 ale_parameters = {'kappa': Constant(1.0)}
 
@@ -75,9 +74,9 @@ Va = FunctionSpace(mesh_f, Va_elm)
 
 # Setup of boundary conditions ----------------------------------- FIXME
 # We have some expression (evolving in time possible) that need to be set
-pf_in = Constant(1)           # sigma_f.n.n on the inflow F_left boundary
+pf_in = Constant(0)           # sigma_f.n.n on the inflow F_left boundary
 uf_bdry = Constant((0, 0))    # velocity on the driven boundary
-ps_out = Constant(1)          # Solid pressure on the top boundary of the Biot domain
+ps_out = Constant(0)          # Solid pressure on the top boundary of the Biot domain
 ale_u_bdry = Constant((0, 0)) # displacement for ALE of the bottom wall
 
 # We collect them for easier updates in the loop. If they have time attribute
@@ -88,11 +87,12 @@ driving_expressions = (pf_in, uf_bdry, ps_out, ale_u_bdry)
 # solid and apply to fluid. Then from fluid unknowns we will compute pressure
 # and displacement. These quantities need to be represented in FEM spaces
 # of the solver. Thus
-traction_f_iface = VectorFunctionSpace(mesh_f, 'DG', 1)  # FIXME: DG0? to be safe
-etas_iface = VectorFunctionSpace(mesh_s, 'CG', 2)
-ps_iface = FunctionSpace(mesh_s, 'DG', 0)
+traction_f_iface = Function(VectorFunctionSpace(mesh_f, 'DG', 1))  # FIXME: DG0? to be safe
+etas_iface = Function(VectorFunctionSpace(mesh_s, 'CG', 2))
+aux = Function(VectorFunctionSpace(mesh_s, 'CG', 2))  # Auxiliary for u_s.np.np
+ps_iface = Function(FunctionSpace(mesh_s, 'DG', 0))
 # For ALE we will cary the displacement to fluid domain
-etaf_iface = VectorFunctionSpace(mesh_f, 'CG', 2)
+etaf_iface = Function(VectorFunctionSpace(mesh_f, 'CG', 2))
 
 # Now we wire up
 bcs_fluid = {'dirichlet': [(facet_lookup['F_bottom'], uf_bdry)],
@@ -101,7 +101,7 @@ bcs_fluid = {'dirichlet': [(facet_lookup['F_bottom'], uf_bdry)],
              'pressure': [(facet_lookup['F_left'], (pf_in, Constant(0)))]}
 
 bcs_ale = {'dirichlet': [(facet_lookup['F_bottom'], ale_u_bdry),
-                         (facet_lookup['I_bottom'], ale_u_iface)],
+                         (facet_lookup['I_bottom'], etaf_iface)],
            'neumann': [(facet_lookup['F_left'], Constant((0, 0))),
                        (facet_lookup['F_right'], Constant((0, 0)))]}
 
@@ -117,35 +117,44 @@ bcs_solid = {
     }
 }
 
-
 # Get the initial conditions ------------------------------------- FIXME
-E = Ws.sub(0).collapse()
-Q = Ws.sub(2).collapse()
+Es = Ws.sub(0).collapse()
+Qs = Ws.sub(2).collapse()
 
-eta_s0 = interpolate(Constant((0, 0)), E)  
-p_s0 = interpolate(Constant(0), Q)  
+eta_s0 = interpolate(Constant((0, 0)), Es)
+
+p_s0_expr = Expression('A*x[0]', degree=1, A=1E-4)
+p_s0 = interpolate(p_s0_expr, Qs)
+# Now that we have the pressure we can also get the flux (to be used for interface bcs)
+# so us_0 should be compatible with ps_0
+u_s0 = project(-solid_parameters['kappa']*Constant((1, 0)), Ws.sub(1).collapse())
 
 # Things for coupling
-n_f, n_s = FacetNormal(mesh_f), FacetNormal(mesh_s)
+n_f, n_p = FacetNormal(mesh_f), FacetNormal(mesh_s)
 
 sigma_f = lambda u, p, mu=fluid_parameters['mu']: 2*mu*sym(grad(u)) - p*Identity(2)
 
-sigma_E = lambda eta: mu=solid_parameters['mu'], lmbda=solid_parameters['lmbda']: (
+sigma_E = lambda eta, mu=solid_parameters['mu'], lmbda=solid_parameters['lmbda']: (
     2*mu*sym(grad(eta)) + lmbda*div(eta)*Identity(2)
 )
 sigma_p = lambda eta, p, alpha=solid_parameters['alpha']: sigma_E(eta)-alpha*p*Identity(2)
+
+iface_tag = facet_lookup['I_bottom']
+interface = (fluid_bdries, solid_bdries, iface_tag)
+
+# Fenics won't let us move mesh with quadratic displacement so
+Va_s = VectorFunctionSpace(mesh_s, 'CG', 1)
 
 # Add things for time stepping
 solid_parameters['dt'] = 1E-6  # FIXME
 solid_parameters['nsteps'] = 1
 
-iface_tag = facet_lookup['I_bottom']
-interface = (fluid_bdries, solid_bdries, iface_tag)
 
 # Splitting loop
 time = 0.
-dt = 1E-8  # Own time
-while time < 2*dt:
+dt = 1E-6  # Could have it own time
+while time < 5*dt:
+    time += dt
     # Set sources if they are time dependent
     for expr in driving_expressions:
         hasattr(expr, 'time') and setattr(expr, 'time', time)
@@ -163,10 +172,22 @@ while time < 2*dt:
     transfer_into(ps_iface,
                   -dot(n_f, dot(sigma_f(u_f, p_f), n_f)),
                   interface)
+    # We set the displacement combining
+    # uf.nf + (d/dt eta + u_s).np = 0 and uf.tau - d/dt eta. tau = 0 into
+    # uf - d/dt eta - (u_s.nf)*nf = 0 i.e eta = dt*(uf - (u_s.nf)*nf) + eta_0 
+    transfer_into(etas_iface,
+                  Constant(dt)*u_f,
+                  interface)  # eta = dt*uf
 
-    # To get the strong bc for displacement we need to get u_p.n_f.n_f 
+    transfer_into(aux,
+                  Constant(dt)*dot(u_s0, n_p)*n_p,
+                  (solid_bdries, iface_tag))
+
+    etas_iface.vector().axpy(-dt, aux.vector()) # eta = dt*uf - dt*u_s.np*np
+    etas_iface.vector().axpy(1.0, eta_s0.vector()) # eta += eta_0
+    
     solid_parameters['T0'] = time   
-    eta_s, u_s, p_s, time_new = solve_solid(Ws, f1=Constant((0, 0)), f2=Constant(0), eta_0=eta_0, p_0=p_0,
+    eta_s, u_s, p_s, time_new = solve_solid(Ws, f1=Constant((0, 0)), f2=Constant(0), eta_0=eta_s0, p_0=p_s0,
                                             bdries=solid_bdries, bcs=bcs_solid, parameters=solid_parameters)
     # It might have done some step on its own so time is not
     time = time_new
@@ -179,8 +200,11 @@ while time < 2*dt:
     
     # Move both domains(under some sensible condition) FIXME
     if True:
-        ALE.move(mesh_s, eta_s)
+        ALE.move(mesh_s, interpolate(eta_s, Va_s))
         ALE.move(mesh_f, eta_f)
+
+        File('foo.pvd') << mesh_s
+        File('bar.pvd') << mesh_f
 
     # Reassign initial conditions
     eta_s0.assign(eta_s)

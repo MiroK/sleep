@@ -25,6 +25,7 @@ import ulfy  # https://github.com/MiroK/ulfy
 
 def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
     '''Return displacement, percolation velocity, pressure and final time'''
+    info('Solving Biot for %d unknowns' % W.dim())
     # NOTE: this is time dependent problem which we solve with 
     # parameters['dt'] for parameters['nsteps'] time steps and to 
     # update time in f1, f2 or the expressions bcs the physical time is
@@ -132,6 +133,7 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
 
         assembler.assemble(b)
         solver.solve(wh_0.vector(), b)
+        k % 10 == 0 and info('  Biot at step (%d, %g) |uh|=%g' % (k, T0, wh_0.vector().norm('l2')))    
 
     eta_h, u_h, p_h = wh_0.split(deepcopy=True)
         

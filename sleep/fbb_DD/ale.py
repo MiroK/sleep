@@ -20,6 +20,7 @@ import ulfy  # https://github.com/MiroK/ulfy
 def solve_ale(V, f, bdries, bcs, parameters):
     '''Return displacement'''
     mesh = V.mesh()
+    info('Solving ALE for %d unknowns' % V.dim())
     # Let's see about boundary conditions - they need to be specified on
     # every boundary.
     assert all(k in ('dirichlet', 'neumann') for k in bcs)
@@ -62,7 +63,9 @@ def solve_ale(V, f, bdries, bcs, parameters):
     # NOTE: this uses direct solver, might be too slow but we know what
     # to do then
     uh = Function(V)
+    timer = Timer('ALE')
     solve(A, uh.vector(), b)
+    info('  ALE done in %f secs |uh|=%g' % (timer.stop(), uh.vector().norm('l2')))
 
     return uh
 
