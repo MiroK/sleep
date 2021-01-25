@@ -25,56 +25,12 @@ fluid_bdries = mesh_f.translate_markers(facet_f, fluid_markers)
 solid_markers = ('I_bottom', 'I_top', 'S1_left', 'S1_right', 'S2_left', 'S2_right', 'S2_top')
 solid_markers = tuple(facet_lookup[k] for k in solid_markers)
 solid_bdries = mesh_s.translate_markers(facet_f, solid_markers)
-
-# Fluid problem setup ------------------------------------------------
-Vf_elm = VectorElement('Lagrange', triangle, 2)
-Qf_elm = FiniteElement('Lagrange', triangle, 1)
-Wf_elm = MixedElement([Vf_elm, Qf_elm])
-# We prescribed pressure inlet(left), traction free
-# outlet, the stress on the solid interface is expected and on the bottom
-# we want to fix velocity
-pf_in = Constant(1) # NOTE: we specify (sigma_f.n).n and (sigma_f.n).tau = 0
-uf_bdry = Constant((0, 0))             # FIXME
-traction_f_iface = Constant((-1, 0))    # FIXME
-
-bcs_fluid = {'dirichlet': [(facet_lookup['F_bottom'], uf_bdry)],
-             'traction': [(facet_lookup['I_bottom'], traction_f_iface),
-                          (facet_lookup['F_right'], Constant((0, 0)))],  # Outlet
-             'pressure': [(facet_lookup['F_left'], (pf_in, Constant(0)))]}
-
-# Just viscosity
-fluid_parameters = {'mu': Constant(1.0)}  # FIXME
-Wf = FunctionSpace(mesh_f, Wf_elm)
-
-# Solid problem setup ------------------------------------------------
-Es_elm = VectorElement('Lagrange', triangle, 2)
-Vs_elm = FiniteElement('Raviart-Thomas', triangle, 1)
-Qs_elm = FiniteElement('Discontinuous Lagrange', triangle, 0)
-Ws_elm = MixedElement([Es_elm, Vs_elm, Qs_elm])
-
-Ws = FunctionSpace(mesh_s, Ws_elm)
-
 # We do not need to keep the facets marking the solid-solid interface
 values = solid_bdries.array()
 values[values == facet_lookup['I_top']] = 0
 
-# Elasticity is traction free but at the bottom where we set displacements.
-# For darcy, there are top and bottom pressures and the sides are no flux
-ps_iface = Constant(0)  # FIXME
-etas_iface = Constant((0, 0))  # FIXME
-ps_out = Constant(0)  # FIXME
-
-bcs_solid = {
-  'elasticity': {
-      'displacement': [(facet_lookup['I_bottom'], etas_iface)],
-      'traction': [(facet_lookup[tag], Constant((0, 0)))
-                  for tag in ('S1_left', 'S1_right', 'S2_left', 'S2_right', 'S2_top')]
-    },
-  'darcy': {
-      'pressure': [(facet_lookup['I_bottom'], ps_iface), (facet_lookup['S2_top'], ps_out)],
-      'flux': [(facet_lookup[tag], Constant((0, 0))) for tag in ('S1_left', 'S1_right', 'S2_left', 'S2_right')]
-  }
-}
+# Parameters setup ------------------------------------------------ FIXME
+fluid_parameters = {'mu': Constant(1.0)}
 
 # For parameters not that Biot has two subdomains (which are marked in the
 # mesh so we difine discontinuous functions for them
@@ -82,7 +38,7 @@ solid_parameters = {'kappa_2': Constant(1), 'kappa_3': Constant(2),
                     'mu_2': Constant(1), 'mu_3': Constant(2),
                     'lmbda_2': Constant(1), 'lmbda_3': Constant(2),
                     'alpha_2': Constant(1), 'alpha_3': Constant(2),
-                    's0_2': Constant(1), 's0_3': Constant(2)}
+                    's0_2': Constant(1), 's0_3': Constant(2)}  # FIXME
 
 # NOTE: Here we do P0 projection
 dxSolid = Measure('dx', domain=mesh_s, subdomain_data=mesh_s.marking_function)
@@ -100,44 +56,133 @@ for coef in ('kappa', 'mu', 'lmbda', 'alpha', 's0'):
 
     solid_parameters[coef] = coef_function
     
-# Add things for time stepping
-solid_parameters['dt'] = 1E-6
-solid_parameters['nsteps'] = 1
-solid_parameters['T0'] = 0.
-
-
-# Get the initial conditions
-E = Ws.sub(0).collapse()
-Q = Ws.sub(2).collapse()
-
-eta_0 = interpolate(Constant((0, 0)), E)  # FIXME
-p_0 = interpolate(Constant(0), Q)  # FIXME
-
-ans = solve_solid(Ws, f1=Constant((0, 0)), f2=Constant(0), eta_0=eta_0, p_0=p_0,
-                  bdries=solid_bdries, bcs=bcs_solid, parameters=solid_parameters)
-
-
-
-# Ale problem setup --------------------------------------------------
-Va_elm = VectorElement('Lagrange', triangle, 1)
 ale_parameters = {'kappa': Constant(1.0)}
 
-ale_u_bdry = Constant((0, 0))        # FIXME: The one that deforms the bottom wall
-ale_u_iface = Constant((1, 1))   # FIXME: Displacement comming from solid
+# Setup fem spaces ---------------------------------------------------
+Vf_elm = VectorElement('Lagrange', triangle, 2)
+Qf_elm = FiniteElement('Lagrange', triangle, 1)
+Wf_elm = MixedElement([Vf_elm, Qf_elm])
+Wf = FunctionSpace(mesh_f, Wf_elm)
 
-# Top bottom are prescribed displacement, and on sides we put 0 stresses
+Es_elm = VectorElement('Lagrange', triangle, 2)
+Vs_elm = FiniteElement('Raviart-Thomas', triangle, 1)
+Qs_elm = FiniteElement('Discontinuous Lagrange', triangle, 0)
+Ws_elm = MixedElement([Es_elm, Vs_elm, Qs_elm])
+Ws = FunctionSpace(mesh_s, Ws_elm)
+
+Va_elm = VectorElement('Lagrange', triangle, 1)
+Va = FunctionSpace(mesh_f, Va_elm)
+
+# Setup of boundary conditions ----------------------------------- FIXME
+# We have some expression (evolving in time possible) that need to be set
+pf_in = Constant(1)           # sigma_f.n.n on the inflow F_left boundary
+uf_bdry = Constant((0, 0))    # velocity on the driven boundary
+ps_out = Constant(1)          # Solid pressure on the top boundary of the Biot domain
+ale_u_bdry = Constant((0, 0)) # displacement for ALE of the bottom wall
+
+# We collect them for easier updates in the loop. If they have time attribute
+# it will be set
+driving_expressions = (pf_in, uf_bdry, ps_out, ale_u_bdry)
+
+# These are realted to interface conditions. We will compute traction from
+# solid and apply to fluid. Then from fluid unknowns we will compute pressure
+# and displacement. These quantities need to be represented in FEM spaces
+# of the solver. Thus
+traction_f_iface = VectorFunctionSpace(mesh_f, 'DG', 1)  # FIXME: DG0? to be safe
+etas_iface = VectorFunctionSpace(mesh_s, 'CG', 2)
+ps_iface = FunctionSpace(mesh_s, 'DG', 0)
+# For ALE we will cary the displacement to fluid domain
+etaf_iface = VectorFunctionSpace(mesh_f, 'CG', 2)
+
+# Now we wire up
+bcs_fluid = {'dirichlet': [(facet_lookup['F_bottom'], uf_bdry)],
+             'traction': [(facet_lookup['I_bottom'], traction_f_iface),
+                          (facet_lookup['F_right'], Constant((0, 0)))],  # Outlet
+             'pressure': [(facet_lookup['F_left'], (pf_in, Constant(0)))]}
+
 bcs_ale = {'dirichlet': [(facet_lookup['F_bottom'], ale_u_bdry),
                          (facet_lookup['I_bottom'], ale_u_iface)],
            'neumann': [(facet_lookup['F_left'], Constant((0, 0))),
                        (facet_lookup['F_right'], Constant((0, 0)))]}
 
-Va = FunctionSpace(mesh_f, Va_elm)
+bcs_solid = {
+    'elasticity': {
+        'displacement': [(facet_lookup['I_bottom'], etas_iface)],
+        'traction': [(facet_lookup[tag], Constant((0, 0)))
+                     for tag in ('S1_left', 'S1_right', 'S2_left', 'S2_right', 'S2_top')]
+    },
+    'darcy': {
+        'pressure': [(facet_lookup['I_bottom'], ps_iface), (facet_lookup['S2_top'], ps_out)],
+        'flux': [(facet_lookup[tag], Constant((0, 0))) for tag in ('S1_left', 'S1_right', 'S2_left', 'S2_right')]
+    }
+}
+
+
+# Get the initial conditions ------------------------------------- FIXME
+E = Ws.sub(0).collapse()
+Q = Ws.sub(2).collapse()
+
+eta_s0 = interpolate(Constant((0, 0)), E)  
+p_s0 = interpolate(Constant(0), Q)  
+
+# Things for coupling
+n_f, n_s = FacetNormal(mesh_f), FacetNormal(mesh_s)
+
+sigma_f = lambda u, p, mu=fluid_parameters['mu']: 2*mu*sym(grad(u)) - p*Identity(2)
+
+sigma_E = lambda eta: mu=solid_parameters['mu'], lmbda=solid_parameters['lmbda']: (
+    2*mu*sym(grad(eta)) + lmbda*div(eta)*Identity(2)
+)
+sigma_p = lambda eta, p, alpha=solid_parameters['alpha']: sigma_E(eta)-alpha*p*Identity(2)
+
+# Add things for time stepping
+solid_parameters['dt'] = 1E-6  # FIXME
+solid_parameters['nsteps'] = 1
+
+iface_tag = facet_lookup['I_bottom']
+interface = (fluid_bdries, solid_bdries, iface_tag)
 
 # Splitting loop
+time = 0.
+dt = 1E-8  # Own time
+while time < 2*dt:
+    # Set sources if they are time dependent
+    for expr in driving_expressions:
+        hasattr(expr, 'time') and setattr(expr, 'time', time)
 
-#uf_h, pf_h = solve_fluid(Wf, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_fluid,
-#                         parameters=fluid_parameters)
+    # Given that eta_0 and p_0 we compute traction sigma_f.n_f = -sigma_p.n_p
+    transfer_into(traction_f_iface,
+                  -dot(sigma_p(eta_s0, p_s0), n_p),
+                  interface) 
 
-#eta_fh = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale,
-#                   parameters=ale_parameters)
+    # Using traction solve fluid problem
+    u_f, p_f = solve_fluid(Wf, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_fluid,
+                           parameters=fluid_parameters)
+    
+    # In solid we want to prescribe pressure = -sigma_f.n_f.n_f
+    transfer_into(ps_iface,
+                  -dot(n_f, dot(sigma_f(u_f, p_f), n_f)),
+                  interface)
 
+    # To get the strong bc for displacement we need to get u_p.n_f.n_f 
+    solid_parameters['T0'] = time   
+    eta_s, u_s, p_s, time_new = solve_solid(Ws, f1=Constant((0, 0)), f2=Constant(0), eta_0=eta_0, p_0=p_0,
+                                            bdries=solid_bdries, bcs=bcs_solid, parameters=solid_parameters)
+    # It might have done some step on its own so time is not
+    time = time_new
+
+    # Move the displacement for ALE
+    transfer_into(etaf_iface, eta_s, interface)
+    # Finally for ALE
+    eta_f = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale,
+                      parameters=ale_parameters)
+    
+    # Move both domains(under some sensible condition) FIXME
+    if True:
+        ALE.move(mesh_s, eta_s)
+        ALE.move(mesh_f, eta_f)
+
+    # Reassign initial conditions
+    eta_s0.assign(eta_s)
+    u_s0.assign(u_s)
+    p_s0.assign(p_s)
