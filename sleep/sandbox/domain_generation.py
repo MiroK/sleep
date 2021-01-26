@@ -87,7 +87,8 @@ def compute_polygon(points):
         tags = [3, 4, 2, 5, 6, 1]
         return points, tags
 
-    def insert_point(p, (A, B)):
+    def insert_point(p, point):
+        A, B = point
         s = (A[1]-p[1])/float(A[1]-B[1])
         #
         return (A[0] + s*(B[0]-A[0]), A[1] + s*(B[1]-A[1]), p[-1])
@@ -163,9 +164,9 @@ def generate_mesh(r_inner, r_outer, length, inner_p=None, outer_p=None, inner_si
 
     # FIXME: distance of the side curves
     for left, right in zip(tags[:tags.index(2)], reversed(tags[tags.index(2):tags.index(1)])):
-        print left, (tags.index(left), tags.index(left) + 1)
-        print right, (tags.index(right), tags.index(right) + 1)
-        print 
+        print(left, (tags.index(left), tags.index(left) + 1))
+        print(right, (tags.index(right), tags.index(right) + 1))
+        print()
     
 
 
@@ -182,8 +183,6 @@ def generate_mesh(r_inner, r_outer, length, inner_p=None, outer_p=None, inner_si
 # -------------------------------------------------------------------
 
 if __name__ == '__main__':
-    from dolfin import plot, interactive
-    
     mesh, bdries = generate_mesh(r_inner=0.5,
                                  r_outer=1.0,
                                  length=1,
@@ -195,6 +194,4 @@ if __name__ == '__main__':
                                  scale=1./2**5,
                                  save='')
 
-    plot(bdries)
-    interactive()
-    
+   

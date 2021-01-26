@@ -1,6 +1,6 @@
 import sys, os
 #from brainpulse.fem.
-from mshconvert import convert2xml
+from .mshconvert import convert2xml
 from dolfin import Mesh, HDF5File, MeshFunction, info
 
 

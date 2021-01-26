@@ -27,22 +27,22 @@ def build_model(model, geometry_parameters):
     c = factory.addPoint(X, YF+YS1, 0)
     d = factory.addPoint(X, YF+YS1+YS2, 0)
 
-    fluid_lines = [factory.addLine(*p) for p in (B, A), (A, a), (a, b)]
+    fluid_lines = [factory.addLine(*p) for p in ((B, A), (A, a), (a, b))]
     named_lines = dict(zip(('F_left', 'F_bottom', 'F_right'), fluid_lines))
 
-    interface_lines = [factory.addLine(*p) for p in (b, B), (C, c)]
+    interface_lines = [factory.addLine(*p) for p in ((b, B), (C, c))]
     named_lines.update(dict(zip(('I_bottom', 'I_top'), interface_lines)))
 
     fluid_loop = factory.addCurveLoop(fluid_lines + [interface_lines[0]])
     fluid = factory.addPlaneSurface([fluid_loop])
 
-    solid1_lines = [factory.addLine(*p) for p in (B, C), (c, b)]
+    solid1_lines = [factory.addLine(*p) for p in ((B, C), (c, b))]
     named_lines.update(dict(zip(('S1_left', 'S1_right'), solid1_lines)))
     
     solid1_loop = factory.addCurveLoop(sum(zip(interface_lines, solid1_lines), ()))
     solid1 = factory.addPlaneSurface([solid1_loop])
 
-    solid2_lines = [factory.addLine(*p) for p in (c, d), (d, D), (D, C)]
+    solid2_lines = [factory.addLine(*p) for p in ((c, d), (d, D), (D, C))]
     named_lines.update(dict(zip(('S2_right', 'S2_top', 'S2_left'), solid2_lines)))
 
     solid2_loop = factory.addCurveLoop(solid2_lines + [interface_lines[1]])

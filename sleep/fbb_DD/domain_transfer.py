@@ -191,7 +191,7 @@ if __name__ == '__main__':
                 plt.plot(x, num[:, i])
             plt.legend()
 
-        print max(np.linalg.norm(true-num, 2, axis=-1))
+        print(max(np.linalg.norm(true-num, 2, axis=-1)))
     plt.show()    
 
     

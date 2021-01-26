@@ -40,7 +40,7 @@ class EmbeddedMesh(df.Mesh):
 
             # So everybody is marked as 1
             one_cell_f = df.MeshFunction('size_t', base_mesh, tdim, 0)
-            for cells in color_cells.itervalues(): one_cell_f.array()[cells] = 1
+            for cells in color_cells.values(): one_cell_f.array()[cells] = 1
             
             # The Embedded mesh now steals a lot from submesh
             submesh = df.SubMesh(base_mesh, one_cell_f, 1)
@@ -61,7 +61,7 @@ class EmbeddedMesh(df.Mesh):
             f_values = f.array()
             if len(markers) > 1:
                 old2new = dict(zip(mapping_tdim, range(len(mapping_tdim))))
-                for color, old_cells in color_cells.iteritems():
+                for color, old_cells in color_cells.items():
                     new_cells = np.array([old2new[o] for o in old_cells], dtype='uintp')
                     f_values[new_cells] = color
             else:
@@ -252,7 +252,7 @@ def embed_mesh(child_mesh, parent_mesh, TOL=1E-8):
     maybe = []
     # Let's see about vertex emebedding - reduce to candidates
     for i, xi in enumerate(parent_x):
-        tree.collides(df.Point(xi)) and maybe.append(i)
+        tree.compute_collisions(df.Point(xi)) and maybe.append(i)
     assert maybe
     print('Checking {} / {} parent vertices'.format(len(maybe), len(parent_x)))
     maybe_x = parent_x[maybe]

@@ -1,4 +1,5 @@
 from dolfin import *
+from functools import reduce
 import itertools
 import operator
 import sympy as sp
@@ -72,7 +73,7 @@ def solve_ale(V, f, bdries, bcs, parameters):
 
 def mms_ale(kappa_value):
     '''Method of manufactured solutions on [0, 1]^2'''
-    mesh = UnitSquareMesh(mpi_comm_self(), 2, 2)  # Dummy
+    mesh = UnitSquareMesh(2, 2)  # Dummy
     V = VectorFunctionSpace(mesh, 'CG', 2)
     # Coefficient space
     S = FunctionSpace(mesh, 'DG', 0)
