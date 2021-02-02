@@ -128,27 +128,27 @@ if __name__ == '__main__':
 
     model = gmsh.model
 
-    geometry_parameters = {'X': 2, 'YF': 0.5, 'YS1': 0.25, 'YS2': 0.3}
+    geometry_parameters = {'X': 500e-4, 'YF': 20e-4, 'YS1': 1e-4, 'YS2': 99e-4}
     model, tags = build_model(model, geometry_parameters)
 
-    # Origin, width, inside, outside sizes
-    sizes = {'F1_bottom': (0-0.1, 0.2, 0.1, 0.2),
-             'I_bottom': (0+geometry_parameters['YF']-0.05, 0.1, 0.03, 0.3),
-             'I_top': (0+geometry_parameters['YF']+geometry_parameters['YS1']-0.05, 0.1, 0.03, 0.2),
-             'S2_top': (0+geometry_parameters['YF']+geometry_parameters['YS1']+geometry_parameters['YS2']-0.1, 0.2, 0.1, 0.4)
-    }
 
+    Number_cells_vertical_S1=5
+    # Origin, width, inside, outside sizes
+    sizes = {'I_bottom': (0+geometry_parameters['YF']-geometry_parameters['YF']/10, +geometry_parameters['YF']+geometry_parameters['YS1']/2, geometry_parameters['YS1']/Number_cells_vertical_S1,geometry_parameters['X']/10,geometry_parameters['YF']),
+             'I_top': (0+geometry_parameters['YF']+geometry_parameters['YS1']-geometry_parameters['YS1']/2, 0+geometry_parameters['YF']+geometry_parameters['YS1']+geometry_parameters['YS1'], geometry_parameters['YS1']/Number_cells_vertical_S1, geometry_parameters['X']/10,geometry_parameters['YS2'])
+    }
     field = model.mesh.field
     fid = 1
     boxes = []
-    for (y, w, Vin, Vout) in sizes.values():
+    for (ymin, ymax, Vin, Vout,t) in sizes.values():
          field.add('Box', fid)
          field.setNumber(fid, 'XMin', 0)
          field.setNumber(fid, 'XMax', 0+geometry_parameters['X'])
-         field.setNumber(fid, 'YMin', y)
-         field.setNumber(fid, 'YMax', y+w)
+         field.setNumber(fid, 'YMin', ymin)
+         field.setNumber(fid, 'YMax', ymax)
          field.setNumber(fid, 'VIn', Vin)
          field.setNumber(fid, 'VOut', Vout)
+         field.setNumber(fid, 'Thickness', t)
 
          boxes.append(fid)
          fid += 1
