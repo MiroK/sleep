@@ -29,6 +29,9 @@ solid_bdries = mesh_s.translate_markers(facet_f, solid_markers)
 values = solid_bdries.array()
 values[values == facet_lookup['I_top']] = 0
 
+
+
+# Parameters setup ------------------------------------------------ FIXME
 mu_F=Constant(7e-3)
 kappa_2=Constant(3e-15)
 kappa_3=Constant(2e-13)
@@ -40,21 +43,27 @@ s0_3=Constant(0.0)
 alpha_2=Constant(1.0)
 alpha_3=Constant(1.0)
 
-mu_2=E_2/(2*(1+poisson))
-mu_3=E_3/(2*(1+poisson))
-lmbda_2=E_2*poisson/(1+poisson)/(1-2*poisson)
-lmbda_3=E_3*poisson/(1+poisson)/(1-2*poisson)
 
-# Parameters setup ------------------------------------------------ FIXME
-fluid_parameters = {'mu': Constant(1.0)}
+
+#-----------------------------------
+
+
+mu_2=Constant(E_2/(2*(1+poisson)))
+mu_3=Constant(E_3/(2*(1+poisson)))
+lmbda_2=Constant(E_2*poisson/(1+poisson)/(1-2*poisson))
+lmbda_3=Constant(E_3*poisson/(1+poisson)/(1-2*poisson))
+
+
+
+fluid_parameters = {'mu': mu_F}
 
 # For parameters not that Biot has two subdomains (which are marked in the
 # mesh so we difine discontinuous functions for them
-solid_parameters = {'kappa_2': Constant(1), 'kappa_3': Constant(2),
-                    'mu_2': Constant(1), 'mu_3': Constant(2),
-                    'lmbda_2': Constant(1), 'lmbda_3': Constant(2),
-                    'alpha_2': Constant(1), 'alpha_3': Constant(2),
-                    's0_2': Constant(1), 's0_3': Constant(2)}  # FIXME
+solid_parameters = {'kappa_2': kappa_2, 'kappa_3': kappa_3,
+                    'mu_2': mu_2, 'mu_3':mu_3,
+                    'lmbda_2': lmbda_2, 'lmbda_3': lmbda_3,
+                    'alpha_2': alpha_2, 'alpha_3': alpha_3,
+                    's0_2': s0_2, 's0_3': s0_3}  # FIXME
 
 # NOTE: Here we do P0 projection
 dxSolid = Measure('dx', domain=mesh_s, subdomain_data=mesh_s.marking_function)
