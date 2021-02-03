@@ -65,16 +65,15 @@ def solve_fluid(W, f, bdries, bcs, parameters):
     # We need to impose the normal component of the normal traction on the inlet and outlet to be the pressures we want on each surface
     # and force the flow to be normal to those surfaces <-- this is incompatible with the moving top and bottom surfaces
     # so force the normal component of the grad u to be zero
-    bcs_D =[]
+
     for tag, value in pressure_bcs:
         # impose normal component of normal traction do be equal to the imposed pressure
-        system += inner(value, dot(v, n))*ds(tag)
+        system += -inner(-value, dot(v, n))*ds(tag) # note the minus sign before the pressure term in the stress
         # impose  dot(n, grad(u))=0
-        system += -inner(Constant((0, 0)), v)*ds(tag)
+        #system += -inner(Constant((0, 0)), v)*ds(tag)
 
     # velocity bcs go onto the matrix
-    for tag, value in velocity_bcs:
-        bcs_D.append(DirichletBC(W.sub(0), value, bdries, tag))
+    bcs_D = [DirichletBC(W.sub(0), value, bdries, tag) for tag, value in velocity_bcs]
 
     # Discrete problem
     a, L = lhs(system), rhs(system)
