@@ -33,6 +33,7 @@ mu_F=Constant(7e-3)
 #-----------------------------------
 
 fluid_parameters = {'mu': mu_F}
+ale_parameters = {'kappa': Constant(1.0)}
 
 
 # Setup fem spaces ---------------------------------------------------
@@ -41,27 +42,44 @@ Qf_elm = FiniteElement('Lagrange', triangle, 1)
 Wf_elm = MixedElement([Vf_elm, Qf_elm])
 Wf = FunctionSpace(mesh_f, Wf_elm)
 
+Va_elm = VectorElement('Lagrange', triangle, 1)
+Va = FunctionSpace(mesh_f, Va_elm)
+
 # Setup of boundary conditions ----------------------------------- FIXME
 
 import sympy
 ts = sympy.symbols("time")
+
+t1 = sympy.symbols("t1")
+t2 = sympy.symbols("t2")
 sin = sympy.sin
 
 amp=1e-4 #cm
 f=1 #Hz
 
-functionU = amp*sin(2*pi*f*ts) # displacement
+functionU = amp*sin(2*pi*f*t1) # displacement
 U_vessel = sympy.printing.ccode(functionU)
 
-functionV = sympy.diff(functionU,ts) # velocity
+#functionV = amp*(sin(2*pi*f*t2)-sin(2*pi*f*t1))/(t2-t1) # velocity
+functionV = sympy.diff(functionU,t1) # velocity
 V_vessel = sympy.printing.ccode(functionV)
+
+functionUALE=amp*(sin(2*pi*f*t2)-sin(2*pi*f*t1))
+UALE_vessel = sympy.printing.ccode(functionUALE)
 
 
 
 pf_in = Constant(1330)           # sigma_f.n.n on the inflow F_left boundary
 pf_out = Constant(0)           # sigma_f.n.n on the outflow F_right boundary
-uf_bottom = Expression(('0','0'), time = 0, degree=2)   # no slip condition + vessel wall at the bottom
-uf_top = Expression(('0','0'), time = 0, degree=2)   # no slip condition at the top
+
+uf_bottom = Expression(('0',V_vessel ), t1 = 0, t2=1, degree=2)   # no slip condition + vessel wall at the bottomuf_top = Expression(('0','0'), time = 0, degree=2)   # no slip condition at the top
+uf_top=Constant((0,0)) # no slip condition
+
+ale_u_bottom = Expression(('0',UALE_vessel ), t1 = 0, t2=1, degree=2) # displacement for ALE of the bottom wall
+ale_u_top = Constant((0,0)) # displacement for ALE of the top wall
+
+# We collect the time dependent BC for update
+driving_expressions = (uf_bottom,ale_u_bottom)
 
 # Now we wire up
 bcs_fluid = {'velocity': [(facet_lookup['F_bottom'], uf_bottom),
@@ -70,24 +88,59 @@ bcs_fluid = {'velocity': [(facet_lookup['F_bottom'], uf_bottom),
              'pressure': [(facet_lookup['F_left'], pf_in),
                            (facet_lookup['F_right'], pf_out) ]}
 
-
-# Get the initial conditions ------------------------------------- FIXME
-
-
-
-
-# Solve fluid steady state
-
-uf_out, pf_out = File('./output/poisseuille/uf.pvd'), File('./output/poisseuille/pf.pvd')
+bcs_ale = {'dirichlet': [(facet_lookup['F_bottom'], ale_u_bottom),
+                         (facet_lookup['I_bottom'], ale_u_top)],
+           'neumann': [(facet_lookup['F_left'], Constant((0, 0))),
+                       (facet_lookup['F_right'], Constant((0, 0)))]}
 
 
-# Solve fluid problem
-u_f, p_f = solve_fluid(Wf, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_fluid,
+# Time loop
+time = 0.
+timestep=0
+
+
+dt = 1E-3 # Could have it own time
+Toutput=1e2
+
+tfinal=1
+
+uf_out, pf_out, etaf_out = File('./output/fluid_moving_wall/uf.pvd'), File('./output/fluid_moving_wall/pf.pvd'), File('./output/fluid_moving_wall/etaf.pvd')
+
+while time < tfinal:
+    time += dt
+    timestep+=1
+
+    # Set sources if they are time dependent
+    for expr in driving_expressions:
+        hasattr(expr, 't1') and setattr(expr, 't1', time)
+        hasattr(expr, 't2') and setattr(expr, 't2', time+dt)
+
+   # uf_bottom = Expression((V_vessel,'0'), t1 = time, t2=time+dt, degree=2)   # no slip condition + vessel wall at the bottom
+
+    # Solve fluid problem
+    u_f, p_f = solve_fluid(Wf, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_fluid,
                            parameters=fluid_parameters)
     
-u_f.rename("uf", "tmp")
-p_f.rename("pf", "tmp")
+    # Solve ALE
+    # compute the displacement
+    #ale_u_bottom=Expression((UALE_vessel,'0'), t1 = time, t2=time+dt, degree=2) 
 
-uf_out << (u_f)
-pf_out << (p_f)
+    eta_f = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale,
+                      parameters=ale_parameters)
+    
+    # Move domains
+    ALE.move(mesh_f, eta_f)
+
+    # Save output
+    if(timestep % int(Toutput) == 0):
+
+        eta_f.rename("eta_f", "tmp")
+
+        etaf_out << (eta_f, time)
+ 
+        u_f.rename("uf", "tmp")
+        p_f.rename("pf", "tmp")
+
+        uf_out << (u_f, time)
+        pf_out << (p_f, time)
 
