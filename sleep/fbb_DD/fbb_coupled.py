@@ -134,10 +134,10 @@ ps_iface = Function(FunctionSpace(mesh_s, 'DG', 0))
 etaf_iface = Function(VectorFunctionSpace(mesh_f, 'CG', 2))
 
 # Now we wire up
-bcs_fluid = {'dirichlet': [(facet_lookup['F_bottom'], uf_bdry)],
+bcs_fluid = {'velocity': [(facet_lookup['F_bottom'], uf_bdry)],
              'traction': [(facet_lookup['I_bottom'], traction_f_iface),
                           (facet_lookup['F_right'], Constant((0, 0)))],  # Outlet
-             'pressure': [(facet_lookup['F_left'], (pf_in, Constant(0)))]}
+             'pressure': [(facet_lookup['F_left'], pf_in)]}
 
 bcs_ale = {'dirichlet': [(facet_lookup['F_bottom'], ale_u_bdry),
                          (facet_lookup['I_bottom'], etaf_iface)],
