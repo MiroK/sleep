@@ -103,24 +103,35 @@ import sympy
 ts = sympy.symbols("time")
 sin = sympy.sin
 
+t1 = sympy.symbols("t1")
+t2 = sympy.symbols("t2")
+sin = sympy.sin
+
 amp=1e-4 #cm
 f=1 #Hz
 
-functionU = amp*sin(2*pi*f*ts) # displacement
+functionU = amp*sin(2*pi*f*t1) # displacement
 U_vessel = sympy.printing.ccode(functionU)
 
-functionV = sympy.diff(functionU,ts) # velocity
+#functionV = amp*(sin(2*pi*f*t2)-sin(2*pi*f*t1))/(t2-t1) # velocity
+functionV = sympy.diff(functionU,t1) # velocity
 V_vessel = sympy.printing.ccode(functionV)
 
-# We have some expression (evolving in time possible) that need to be set
-pf_in = Constant(0)           # sigma_f.n.n on the inflow F_left boundary
-uf_bdry = Expression(('0',V_vessel), time = 0, degree=2)   # velocity on the driven boundary
+functionUALE=amp*(sin(2*pi*f*t2)-sin(2*pi*f*t1))
+UALE_vessel = sympy.printing.ccode(functionUALE)
+
+pf_in = Constant(1330)           # sigma_f.n.n on the inflow F_left boundary
+pf_out = Constant(0)           # sigma_f.n.n on the outflow F_right boundary
+
+uf_bottom = Expression(('0',V_vessel ), t1 = 0, t2=1, degree=2)   # no slip condition + vessel wall at the bottom
+
+ale_u_bottom = Expression(('0',UALE_vessel ), t1 = 0, t2=1, degree=2) # displacement for ALE of the bottom wall
+
 ps_out = Constant(0)          # Solid pressure on the top boundary of the Biot domain
-ale_u_bdry = Expression(('0',U_vessel), time = 0, degree=2)# displacement for ALE of the bottom wall
 
 # We collect them for easier updates in the loop. If they have time attribute
 # it will be set
-driving_expressions = (pf_in, uf_bdry, ps_out, ale_u_bdry)
+driving_expressions = (pf_in,pf_out, uf_bottom, ps_out, ale_u_bottom)
 
 # These are realted to interface conditions. We will compute traction from
 # solid and apply to fluid. Then from fluid unknowns we will compute pressure
@@ -134,12 +145,12 @@ ps_iface = Function(FunctionSpace(mesh_s, 'DG', 0))
 etaf_iface = Function(VectorFunctionSpace(mesh_f, 'CG', 2))
 
 # Now we wire up
-bcs_fluid = {'velocity': [(facet_lookup['F_bottom'], uf_bdry)],
-             'traction': [(facet_lookup['I_bottom'], traction_f_iface),
-                          (facet_lookup['F_right'], Constant((0, 0)))],  # Outlet
-             'pressure': [(facet_lookup['F_left'], pf_in)]}
+bcs_fluid = {'velocity': [(facet_lookup['F_bottom'], uf_bottom)],
+             'traction': [(facet_lookup['I_bottom'], traction_f_iface)],  # Outlet
+             'pressure': [(facet_lookup['F_left'], pf_in),
+                          (facet_lookup['F_right'], pf_out)]}
 
-bcs_ale = {'dirichlet': [(facet_lookup['F_bottom'], ale_u_bdry),
+bcs_ale = {'dirichlet': [(facet_lookup['F_bottom'], ale_u_bottom),
                          (facet_lookup['I_bottom'], etaf_iface)],
            'neumann': [(facet_lookup['F_left'], Constant((0, 0))),
                        (facet_lookup['F_right'], Constant((0, 0)))]}
@@ -202,6 +213,8 @@ while time < 1:
     # Set sources if they are time dependent
     for expr in driving_expressions:
         hasattr(expr, 'time') and setattr(expr, 'time', time)
+        hasattr(expr, 't1') and setattr(expr, 't1', time)
+        hasattr(expr, 't2') and setattr(expr, 't2', time+dt)
 
     # Given that eta_0 and p_0 we compute traction sigma_f.n_f = -sigma_p.n_p
     transfer_into(traction_f_iface,
