@@ -50,8 +50,10 @@ def solve_fluid(W, f, bdries, bcs, parameters):
     assert len(u.ufl_shape) == 1 and len(p.ufl_shape) == 0
     # All but bc terms
     mu = parameters['mu']
-    system = (inner(2*mu*sym(grad(u)), sym(grad(v)))*dx - inner(p, div(v))*dx
-              -inner(q, div(u))*dx - inner(f, v)*dx)
+    #system = (inner(2*mu*sym(grad(u)), sym(grad(v)))*dx - inner(p, div(v))*dx-inner(q, div(u))*dx - inner(f, v)*dx)
+    #I change the variational form to this
+    system = 2*mu*inner(sym(grad(u)), sym(grad(v)))*dx+ dot(grad(p), v)*dx + div(u)*q*dx
+
     # Handle natural bcs
     n = FacetNormal(mesh)
     ds = Measure('ds', domain=mesh, subdomain_data=bdries)
@@ -61,18 +63,16 @@ def solve_fluid(W, f, bdries, bcs, parameters):
     for tag, value in traction_bcs:
         system += -inner(value, v)*ds(tag)
 
+    bcs_D =[]
     for tag, value in pressure_bcs:
-        R = Constant(((0, -1), (1, 0)))
-        tau = dot(R, n)
-        try:
-            n_part, t_part = value
-        except ValueError:
-            n_part, = value
-            t_part = Constant(0)
-        system += -(inner(n_part, dot(v, n))*ds(tag) + inner(t_part, dot(v, tau))*ds(tag))
+        # set dirichlet BC for pressure 
+        bcs_D.append(DirichletBC(W.sub(1), value, bdries, tag))
+        # impose  dot(n, grad(u))=0
+        system += -inner(Constant((0, 0)), v)*ds(tag)
 
     # Dirichlet bcs go onto the matrix
-    bcs_D = [DirichletBC(W.sub(0), value, bdries, tag) for tag, value in bcs['dirichlet']]
+    for tag, value in dirichlet_bcs:
+        bcs_D.append(DirichletBC(W.sub(0), value, bdries, tag))
 
     # Discrete problem
     a, L = lhs(system), rhs(system)
