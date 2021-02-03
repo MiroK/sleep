@@ -98,11 +98,25 @@ Va_elm = VectorElement('Lagrange', triangle, 1)
 Va = FunctionSpace(mesh_f, Va_elm)
 
 # Setup of boundary conditions ----------------------------------- FIXME
+
+import sympy
+ts = sympy.symbols("time")
+sin = sympy.sin
+
+amp=1e-4
+f=1 #Hz
+
+functionU = amp*sin(2*pi*f*ts)
+U_vessel = sympy.printing.ccode(functionU)
+
+functionV = sympy.diff(functionU,ts) # le signe moins car le flux est dans le sens inverse de la deformation solide
+V_vessel = sympy.printing.ccode(functionV)
+
 # We have some expression (evolving in time possible) that need to be set
 pf_in = Constant(0)           # sigma_f.n.n on the inflow F_left boundary
-uf_bdry = Constant((0, 0))    # velocity on the driven boundary
+uf_bdry = Expression(('0',V_vessel), time = 0, degree=2)   # velocity on the driven boundary
 ps_out = Constant(0)          # Solid pressure on the top boundary of the Biot domain
-ale_u_bdry = Constant((0, 0)) # displacement for ALE of the bottom wall
+ale_u_bdry = Expression(('0',U_vessel), time = 0, degree=2)# displacement for ALE of the bottom wall
 
 # We collect them for easier updates in the loop. If they have time attribute
 # it will be set
@@ -177,8 +191,13 @@ solid_parameters['nsteps'] = 1
 
 # Splitting loop
 time = 0.
+timestep=0
 dt = 1E-6  # Could have it own time
-while time < 5*dt:
+
+us_out, ps_out = File('./output/us.pvd'), File('./output/ps.pvd')
+uf_out, pf_out = File('./output/uf.pvd'), File('./output/pf.pvd')
+
+while time < 1:
     time += dt
     # Set sources if they are time dependent
     for expr in driving_expressions:
@@ -228,10 +247,27 @@ while time < 5*dt:
         ALE.move(mesh_s, interpolate(eta_s, Va_s))
         ALE.move(mesh_f, eta_f)
 
-        File('foo.pvd') << mesh_s
-        File('bar.pvd') << mesh_f
+
 
     # Reassign initial conditions
     eta_s0.assign(eta_s)
     u_s0.assign(u_s)
     p_s0.assign(p_s)
+
+    # Save output
+    timestep+=1
+    if(timestep % int(1) == 0):
+        u_s.rename("us", "tmp")
+        p_s.rename("ps", "tmp")
+
+        us_out << (u_s, time)
+        ps_out << (p_s, time)
+
+        u_f.rename("uf", "tmp")
+        p_f.rename("pf", "tmp")
+
+        uf_out << (u_f, time)
+        pf_out << (p_f, time)
+
+        File('./output/meshs.pvd') << mesh_s
+        File('./output/meshf.pvd') << mesh_f
