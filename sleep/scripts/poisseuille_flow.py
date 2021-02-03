@@ -49,7 +49,7 @@ uf_bottom = Expression(('0','0'), time = 0, degree=2)   # no slip condition at t
 uf_top = Expression(('0','0'), time = 0, degree=2)   # no slip condition at the top
 
 # Now we wire up
-bcs_fluid = {'dirichlet': [(facet_lookup['F_bottom'], uf_bottom),
+bcs_fluid = {'velocity': [(facet_lookup['F_bottom'], uf_bottom),
                             ((facet_lookup['I_bottom'], uf_top))],
              'traction': [],  
              'pressure': [(facet_lookup['F_left'], pf_in),
