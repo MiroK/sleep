@@ -128,11 +128,12 @@ if __name__ == '__main__':
 
     model = gmsh.model
 
-    geometry_parameters = {'X': 500e-4, 'YF': 20e-4, 'YS1': 1e-4, 'YS2': 99e-4}
+    # Normally L=500 um , YS1=1um, I set other values just for testing
+    geometry_parameters = {'X': 100e-4, 'YF': 20e-4, 'YS1': 10e-4, 'YS2': 99e-4}
     model, tags = build_model(model, geometry_parameters)
 
 
-    Number_cells_vertical_S1=5
+    Number_cells_vertical_S1=3
     # Origin, width, inside, outside sizes
     sizes = {'I_bottom': (0+geometry_parameters['YF']-geometry_parameters['YF']/10, +geometry_parameters['YF']+geometry_parameters['YS1']/2, geometry_parameters['YS1']/Number_cells_vertical_S1,geometry_parameters['X']/10,geometry_parameters['YF']),
              'I_top': (0+geometry_parameters['YF']+geometry_parameters['YS1']-geometry_parameters['YS1']/2, 0+geometry_parameters['YF']+geometry_parameters['YS1']+geometry_parameters['YS1'], geometry_parameters['YS1']/Number_cells_vertical_S1, geometry_parameters['X']/10,geometry_parameters['YS2'])
