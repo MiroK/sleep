@@ -35,8 +35,8 @@ values[values == facet_lookup['I_top']] = 0
 mu_F=Constant(7e-3)
 kappa_2=Constant(3e-15)
 kappa_3=Constant(2e-13)
-E_2=Constant(1000)
-E_3=Constant(100)
+E_2=Constant(1000e3)
+E_3=Constant(100e3)
 poisson=Constant(0.45)
 s0_2=Constant(0.0)
 s0_3=Constant(0.0)
@@ -103,13 +103,13 @@ import sympy
 ts = sympy.symbols("time")
 sin = sympy.sin
 
-amp=1e-4
+amp=1e-4 #cm
 f=1 #Hz
 
-functionU = amp*sin(2*pi*f*ts)
+functionU = amp*sin(2*pi*f*ts) # displacement
 U_vessel = sympy.printing.ccode(functionU)
 
-functionV = sympy.diff(functionU,ts) # le signe moins car le flux est dans le sens inverse de la deformation solide
+functionV = sympy.diff(functionU,ts) # velocity
 V_vessel = sympy.printing.ccode(functionV)
 
 # We have some expression (evolving in time possible) that need to be set
