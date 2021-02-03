@@ -3,6 +3,9 @@
 # Fluid parameters values corresponds to the PVS problem
 # pressure difference : 1 mmHg = 1330 dyn/cm2
 
+# for now I recover the imposed pressure if I use a dirichlet BC on pressure and change the variational form but this is not correct
+# If I impose the pressure on the normal traction I dont recover imposed pressure
+
 from sleep.fbb_DD.domain_transfer import transfer_into
 from sleep.fbb_DD.solid import solve_solid
 from sleep.fbb_DD.fluid import solve_fluid
