@@ -30,7 +30,7 @@ fluid_bdries = mesh_f.translate_markers(facet_f, fluid_markers)
 
 # Parameters setup ------------------------------------------------ FIXME
 
-fluid_parameters = {'mu': 7e-2, 'rho': 1, 'dt':1e-3}
+fluid_parameters = {'mu': 7e-2, 'rho': 1, 'dt':1e-4}
 ale_parameters = {'kappa': Constant(1.0)}
 
 
@@ -69,7 +69,9 @@ UALE_vessel = sympy.printing.ccode(functionUALE)
 
 
 pf_in = Constant(1330)           # sigma_f.n.n on the inflow F_left boundary
-pf_out = Constant(0)           # sigma_f.n.n on the outflow F_right boundary
+#pf_out = Constant(0)           # sigma_f.n.n on the outflow F_right boundary
+
+
 
 uf_bottom = Expression(('0',V_vessel ), t1 = 0, t2=1, degree=2)   # no slip condition + vessel wall at the bottomuf_top = Expression(('0','0'), time = 0, degree=2)   # no slip condition at the top
 uf_top=Constant((0,0)) # no slip condition
@@ -83,9 +85,9 @@ driving_expressions = (uf_bottom,ale_u_bottom)
 # Now we wire up
 bcs_fluid = {'velocity': [(facet_lookup['F_bottom'], uf_bottom),
                             ((facet_lookup['I_bottom'], uf_top))],
+            'velocity_x': [(facet_lookup['F_right'], Constant(0))],
              'traction': [],  
-             'pressure': [(facet_lookup['F_left'], pf_in),
-                           (facet_lookup['F_right'], pf_out) ]}
+             'pressure': [(facet_lookup['F_left'], pf_in)]}
 
 bcs_ale = {'dirichlet': [(facet_lookup['F_bottom'], ale_u_bottom),
                          (facet_lookup['I_bottom'], ale_u_top)],
@@ -101,21 +103,27 @@ pf_n =  project(Constant(0), Wf.sub(1).collapse())
 time = 0.
 timestep=0
 
-dt = fluid_parameters['dt']
-Toutput=1e2
+
+Toutput=0.01
 
 tfinal=1
 
 uf_out, pf_out, etaf_out = File('./output/NS_moving_wall/uf.pvd'), File('./output/NS_moving_wall/pf.pvd'), File('./output/NS_moving_wall/etaf.pvd')
 
+uf_n.rename("uf", "tmp")
+pf_n.rename("pf", "tmp")
+
+uf_out << (uf_n, time)
+pf_out << (pf_n, time)
+
 while time < tfinal:
-    time += dt
+    time += fluid_parameters['dt']
     timestep+=1
 
     # Set sources if they are time dependent
     for expr in driving_expressions:
         hasattr(expr, 't1') and setattr(expr, 't1', time)
-        hasattr(expr, 't2') and setattr(expr, 't2', time+dt)
+        hasattr(expr, 't2') and setattr(expr, 't2', time+fluid_parameters['dt'])
 
     # Solve fluid problem
     uf_, pf_ = solve_fluid(Wf, f=Constant((0, 0)), u_n=uf_n, p_n=pf_n,  bdries=fluid_bdries, bcs=bcs_fluid,
@@ -136,15 +144,15 @@ while time < tfinal:
     ALE.move(mesh_f, eta_f)
 
     # Save output
-    if(timestep % int(Toutput) == 0):
+    if(timestep % int(Toutput/fluid_parameters['dt']) == 0):
 
         eta_f.rename("eta_f", "tmp")
 
         etaf_out << (eta_f, time)
  
-        u_f.rename("uf", "tmp")
-        p_f.rename("pf", "tmp")
+        uf_.rename("uf", "tmp")
+        pf_.rename("pf", "tmp")
 
-        uf_out << (u_f, time)
-        pf_out << (p_f, time)
+        uf_out << (uf_, time)
+        pf_out << (pf_, time)
 

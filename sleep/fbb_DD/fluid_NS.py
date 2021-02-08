@@ -23,17 +23,19 @@ def solve_fluid(W, f, u_n, p_n, bdries, bcs, parameters):
     assert mesh.geometry().dim() == 2
     # Let's see about boundary conditions - they need to be specified on
     # every boundary.
-    assert all(k in ('velocity', 'traction', 'pressure') for k in bcs)
+    assert all(k in ('velocity','velocity_x', 'traction', 'pressure') for k in bcs)
     # The tags must be found in bdries
     velocity_bcs = bcs.get('velocity', ())  
+    velocity_x_bcs = bcs.get('velocity_x', ())  
     traction_bcs = bcs.get('traction', ())
     pressure_bcs = bcs.get('pressure', ())
     # Tuple of pairs (tag, boundary value) is expected
     velocity_tags = set(item[0] for item in velocity_bcs)
+    velocity_x_tags = set(item[0] for item in velocity_x_bcs)
     traction_tags = set(item[0] for item in traction_bcs)
     pressure_tags = set(item[0] for item in pressure_bcs)
 
-    tags = (velocity_tags, traction_tags, pressure_tags)
+    tags = (velocity_tags,velocity_x_tags, traction_tags, pressure_tags)
     # Boundary conditions must be on distinct domains
     for this, that in itertools.combinations(tags, 2):
         if this and that: assert not this & that
@@ -44,35 +46,34 @@ def solve_fluid(W, f, u_n, p_n, bdries, bcs, parameters):
     assert needed == reduce(operator.or_, tags)
 
     ## Define functions
+    # Here W is Velocity space x Pressure space
+    V, Q = W.sub(0).collapse(), W.sub(1).collapse()
                  
-    u, p = TrialFunctions(W)
-    v, q = TestFunctions(W)
+    u, v = TrialFunction(V), TestFunction(V)
+    p, q = TrialFunction(Q), TestFunction(Q)
     assert len(u.ufl_shape) == 1 and len(p.ufl_shape) == 0
 
     # Why not taking directly un and pn ? is it because the mesh can have changed ?
     # Previous solutions
-    wh_n = Function(W)
-    assign(wh_n.sub(0), interpolate(u_n, W.sub(0).collapse()))    
-    assign(wh_n.sub(1), interpolate(p_n, W.sub(1).collapse()))
-    u_n, p_n = split(wh_n)
+    u_n = interpolate(u_n, V)    
+    p_n = interpolate(p_n, Q)
 
     # Define functions at current time step
-    wh = Function(W)
-    u_,p_ = wh.split(True)
+    u_ ,p_ = Function(V), Function(Q)
  
-
-
-
     # Define boundary conditions 
 
     # todo : traction BC
 
-    # Pressure 
-    bcu = [DirichletBC(W.sub(1), value, bdries, tag) for tag, value in pressure_bcs]
+    # Velocity 
+    bcu = [DirichletBC(V, value, bdries, tag) for tag, value in velocity_bcs]
 
+    # Velocity along x axix
 
-    # Velocity
-    bcp = [DirichletBC(W.sub(0), value, bdries, tag) for tag, value in velocity_bcs]
+    bcu += [DirichletBC(V.sub(0), value, bdries, tag) for tag, value in velocity_x_bcs]
+
+    # Pressure
+    bcp = [DirichletBC(Q, value, bdries, tag) for tag, value in pressure_bcs]
 
     # -------------------------------------
     # todo :  I suppose that strain stress definition, variational form definition + assembly of Ai can be done one time outide the time steping
