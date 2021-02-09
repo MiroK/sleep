@@ -105,12 +105,12 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
 
     L = inner(f1, phi)*dx
               
-    # Darcy u=-kappa grad(p)
-    a += (1/kappa)*inner(u, v)*dx - inner(p, div(v))*dx # 
-    
+    # Darcy
+    a += (1/kappa)*inner(u, v)*dx - inner(p, div(v))*dx
+         
     # Mass conservation with backward Euler
-    a += inner(s0*p, q)*dx + inner(alpha*div(eta), q)*dx + dt*inner(div(u), q)*dx 
-    L += dt*inner(f2, q)*dx + inner(s0*p_0, q)*dx + inner(alpha*div(eta_0), q)*dx         
+    a += inner(s0*p, q)*dx + inner(alpha*div(eta), q)*dx + dt*inner(div(u), q)*dx
+    L += dt*inner(f2, q)*dx + inner(s0*p_0, q)*dx + inner(alpha*div(eta_0), q)*dx          
 
     ### Set boundary conditions
 
@@ -128,18 +128,18 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
 
 
     # Flow boundary condition 
-    for tag, value in flux_bcs:
-        L += dt*(1/kappa)*inner(value, q)*ds(tag)
+    #for tag, value in flux_bcs:
+    #    L += dt*(1/kappa)*inner(value, q)*ds(tag)
 
-    # I moved the pressure condition in the Dirichlet conditions
-    #for tag, value in pressure_bcs:
-    #    L += -inner(value, dot(v, n))*ds(tag)
+    # I would move the pressure condition in the Dirichlet conditions
+    for tag, value in pressure_bcs:
+        L += -inner(value, dot(v, n))*ds(tag)
 
     # Dirichlet conditions for pressure and displacements
     bcs_strong =[]
     # Impose fluid pressure
 
-    bcs_strong.extend([DirichletBC(W.sub(2), value, bdries, tag) for tag, value in pressure_bcs])
+    #bcs_strong.extend([DirichletBC(W.sub(2), value, bdries, tag) for tag, value in pressure_bcs])
 
     # Impose displacement bcs 
     bcs_strong.extend([DirichletBC(W.sub(0), value, bdries, tag) for tag, value in displacement_bcs])
@@ -151,11 +151,8 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
     # todo : I would like a general way to impose normal displacement.
 
 
-
-
-
     # Impose flow
-    #bcs_strong.extend([DirichletBC(W.sub(1),value, bdries, tag) for tag, value in flux_bcs])
+    bcs_strong.extend([DirichletBC(W.sub(1),value, bdries, tag) for tag, value in flux_bcs])
 
 
 

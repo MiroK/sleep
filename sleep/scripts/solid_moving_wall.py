@@ -37,12 +37,12 @@ values[values == facet_lookup['I_top']] = 0
 
 
 # Parameters setup ------------------------------------------------ FIXME
-kappa_2=Constant(3e-10) # for the tests I allow more flow
+kappa_2=Constant(3e-15) # for the tests I allow more flow
 kappa_3=Constant(2e-13)
 E_2=Constant(1000e3)
 E_3=Constant(100e3)
 poisson=Constant(0.45)
-s0_2=Constant(1e-1)
+s0_2=Constant(0.0)
 s0_3=Constant(0.0)
 alpha_2=Constant(1.0)
 alpha_3=Constant(1.0)
@@ -114,7 +114,7 @@ t1 = sympy.symbols("t1")
 t2 = sympy.symbols("t2")
 sin = sympy.sin
 
-amp=1e-4 #cm
+amp=3e-4 #cm
 f=1 #Hz
 
 # vessel :  * U imposed
@@ -172,8 +172,8 @@ bcs_solid = {
                      (facet_lookup['S2_left'], Constant(0)),
                      (facet_lookup['S1_right'],Constant(0)),
                      (facet_lookup['S2_right'], Constant(0))],
-        'flux': [(facet_lookup['I_bottom'], Constant(0)), # I want this to be the normal flow
-                  (facet_lookup['S2_top'], Constant(0))]     
+        'flux': [(facet_lookup['I_bottom'], Constant((0,0))), # I want this to be the normal flow
+                  (facet_lookup['S2_top'], Constant((0,0)))]     
     }
 }
 
@@ -186,7 +186,7 @@ p_s0 = interpolate(Constant(0), Qs)
 u_s0 = project(Constant((0, 0)), Ws.sub(1).collapse())
 
 # Add things for time stepping
-solid_parameters['dt'] = 1E-1  # FIXME
+solid_parameters['dt'] = 1E-3  # FIXME
 solid_parameters['nsteps'] = 1
 
 
@@ -201,9 +201,9 @@ time = 0.
 timestep=0
 
 
-Toutput=1
+Toutput=0.01
 
-tfinal=100
+tfinal=1
 
 
 
