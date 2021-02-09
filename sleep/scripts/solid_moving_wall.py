@@ -159,7 +159,7 @@ driving_expressions = (us_bottom, ps_left)
 
 bcs_solid = {
     'elasticity': {
-        'displacement': [(facet_lookup['I_bottom'], us_bottom)],
+        'displacement': [(facet_lookup['I_bottom'], Constant((0,0)))],
         'traction': [(facet_lookup['S2_right'], Constant((0,0))),
                             (facet_lookup['S1_right'], Constant((0,0))),
                             (facet_lookup['S1_left'], Constant((0,0))) ,
@@ -168,10 +168,10 @@ bcs_solid = {
         'displacement_y' : [(facet_lookup['S2_top'], Constant(0))]                         
     },
     'darcy': {
-        'pressure': [(facet_lookup['S1_left'],Constant(0)),
-                     (facet_lookup['S2_left'], Constant(0)),
-                     (facet_lookup['S1_right'],Constant(0)),
-                     (facet_lookup['S2_right'], Constant(0))],
+        'pressure': [(facet_lookup['S1_left'],Constant(1000)),
+                     (facet_lookup['S2_left'], Constant(1000)),
+                     (facet_lookup['S1_right'],Constant(1000)),
+                     (facet_lookup['S2_right'], Constant(1000))],
         'flux': [(facet_lookup['I_bottom'], Constant((0,0))), # I want this to be the normal flow
                   (facet_lookup['S2_top'], Constant((0,0)))]     
     }
@@ -182,17 +182,12 @@ Es = Ws.sub(0).collapse()
 Qs = Ws.sub(2).collapse()
 
 eta_s0 = interpolate(Constant((0, 0)), Es)
-p_s0 = interpolate(Constant(0), Qs)
+p_s0 = interpolate(Constant(1000), Qs)
 u_s0 = project(Constant((0, 0)), Ws.sub(1).collapse())
 
 # Add things for time stepping
 solid_parameters['dt'] = 1E-3  # FIXME
 solid_parameters['nsteps'] = 1
-
-
-#one step    
-eta_s, u_s, p_s = solve_solid(Ws, f1=Constant((0, 0)), f2=Constant(0), eta_0=eta_s0, p_0=p_s0,
-                                            bdries=solid_bdries, bcs=bcs_solid, parameters=solid_parameters)
 
 
 
@@ -201,9 +196,9 @@ time = 0.
 timestep=0
 
 
-Toutput=0.01
+Toutput=1e-3
 
-tfinal=1
+tfinal=10e-3
 
 
 
