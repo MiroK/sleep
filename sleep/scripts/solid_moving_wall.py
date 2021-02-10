@@ -37,35 +37,33 @@ values[values == facet_lookup['I_top']] = 0
 
 
 # Parameters setup ------------------------------------------------ FIXME
-kappa_2=Constant(3e-15) # for the tests I allow more flow
-kappa_3=Constant(2e-13)
-E_2=Constant(1000e3)
-E_3=Constant(100e3)
-poisson=Constant(0.45)
-s0_2=Constant(0.0)
-s0_3=Constant(0.0)
+kappa_2=Constant(3.3e-15/6.97e-3) # for the tests I allow more flow
+kappa_3=Constant(2e-13/6.97e-3) # cm2/(g.cm-1.s-1)
+E_2=Constant(1000e3) # g.cm.s
+E_3=Constant(100e3) # g.cm.s
+poisson=Constant(0.45) # g.cm.s
+
 alpha_2=Constant(1.0)
 alpha_3=Constant(1.0)
 
 
 
 #-----------------------------------
-
-
 mu_2=Constant(E_2/(2*(1+poisson)))
 mu_3=Constant(E_3/(2*(1+poisson)))
 lmbda_2=Constant(E_2*poisson/(1+poisson)/(1-2*poisson))
 lmbda_3=Constant(E_3*poisson/(1+poisson)/(1-2*poisson))
-
+s0_2=1/lmbda_2
+s0_3=1/lmbda_3
 
 # For parameters not that Biot has two subdomains (which are marked in the
 # mesh so we difine discontinuous functions for them
 # For the tests I put same coef every where
-solid_parameters = {'kappa_2': kappa_2, 'kappa_3': kappa_2,
-                    'mu_2': mu_2, 'mu_3':mu_2,
-                    'lmbda_2': lmbda_2, 'lmbda_3': lmbda_2,
-                    'alpha_2': alpha_2, 'alpha_3': alpha_2,
-                    's0_2': s0_2, 's0_3': s0_2}  # FIXME
+solid_parameters = {'kappa_2': kappa_2, 'kappa_3': kappa_3,
+                    'mu_2': mu_2, 'mu_3':mu_3,
+                    'lmbda_2': lmbda_2, 'lmbda_3': lmbda_3,
+                    'alpha_2': alpha_2, 'alpha_3': alpha_3,
+                    's0_2': s0_2, 's0_3': s0_3}  
 
 # NOTE: Here we do P0 projection
 dxSolid = Measure('dx', domain=mesh_s, subdomain_data=mesh_s.marking_function)
@@ -112,7 +110,7 @@ sin = sympy.sin
 
 t1 = sympy.symbols("t1")
 t2 = sympy.symbols("t2")
-sin = sympy.sin
+
 
 amp=3e-4 #cm
 f=1 #Hz
@@ -159,21 +157,20 @@ driving_expressions = (us_bottom, ps_left)
 
 bcs_solid = {
     'elasticity': {
-        'displacement': [(facet_lookup['I_bottom'], Constant((0,0)))],
-        'traction': [(facet_lookup['S2_right'], Constant((0,0))),
-                            (facet_lookup['S1_right'], Constant((0,0))),
-                            (facet_lookup['S1_left'], Constant((0,0))) ,
-                            (facet_lookup['S2_left'], Constant((0,0)))],
-        'displacement_x' : [],
+        'displacement': [(facet_lookup['I_bottom'], us_bottom)],
+        'traction': [(facet_lookup['S1_left'], Constant((0,0))) ,
+                     (facet_lookup['S2_left'], Constant((0,0)))],
+        'displacement_x' : [(facet_lookup['S2_right'], Constant(0)),
+                            (facet_lookup['S1_right'], Constant(0))],
         'displacement_y' : [(facet_lookup['S2_top'], Constant(0))]                         
     },
     'darcy': {
-        'pressure': [(facet_lookup['S1_left'],Constant(1000)),
-                     (facet_lookup['S2_left'], Constant(1000)),
-                     (facet_lookup['S1_right'],Constant(1000)),
-                     (facet_lookup['S2_right'], Constant(1000))],
+        'pressure': [(facet_lookup['S1_left'],Constant(1330)),
+                     (facet_lookup['S2_left'], Constant(1330))],
         'flux': [(facet_lookup['I_bottom'], Constant((0,0))), # I want this to be the normal flow
-                  (facet_lookup['S2_top'], Constant((0,0)))]     
+                  (facet_lookup['S2_top'], Constant((0,0))),
+                  (facet_lookup['S2_right'], Constant((0,0))), # I want this to be the normal flow
+                  (facet_lookup['S1_right'], Constant((0,0)))]     
     }
 }
 
@@ -181,13 +178,16 @@ bcs_solid = {
 Es = Ws.sub(0).collapse()
 Qs = Ws.sub(2).collapse()
 
-eta_s0 = interpolate(Constant((0, 0)), Es)
-p_s0 = interpolate(Constant(1000), Qs)
-u_s0 = project(Constant((0, 0)), Ws.sub(1).collapse())
+
+# What is the difference between project and interpolate?
+eta_s0 = project(Constant((0, 0)), Es)
+p_s0 = project(Constant(1330), Qs)
+u_s0 = project(Constant((0, 0)), Ws.sub(1).collapse()) 
+
 
 # Add things for time stepping
 solid_parameters['dt'] = 1E-3  # FIXME
-solid_parameters['nsteps'] = 1
+#solid_parameters['nsteps'] = 1 # I supressed the steping in the solver
 
 
 
@@ -196,9 +196,9 @@ time = 0.
 timestep=0
 
 
-Toutput=1e-3
+Toutput=0.01
 
-tfinal=10e-3
+tfinal=1
 
 
 

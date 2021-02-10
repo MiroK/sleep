@@ -92,55 +92,64 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
     # For weak form also time step is needed
     dt = Constant(parameters['dt'])
 
-    # Previous solutions
+    # Previous solutions : 
     wh_0 = Function(W)
-    assign(wh_0.sub(0), interpolate(eta_0, W.sub(0).collapse()))    
+    assign(wh_0.sub(0), interpolate(eta_0, W.sub(0).collapse())) 
+   # assign(wh_0.sub(1), interpolate(u_0, W.sub(1).collapse()))  
     assign(wh_0.sub(2), interpolate(p_0, W.sub(2).collapse()))
     eta_0, u_0, p_0 = split(wh_0)
 
+
     # Elasticity
-    a = (2*mu*inner(sym(grad(eta)), sym(grad(phi)))*dx +
-         inner(lmbda*div(eta), div(phi))*dx -
-         inner(p, alpha*div(phi))*dx)
+    a =   inner(2*mu*sym(grad(eta)), sym(grad(phi)))*dx 
+    a +=  inner(lmbda*div(eta), div(phi))*dx 
+    a += -alpha*inner(p, div(phi))*dx
 
     L = inner(f1, phi)*dx
               
     # Darcy
-    a += (1/kappa)*inner(u, v)*dx - inner(p, div(v))*dx
+    a +=   inner((1/kappa)*u, v)*dx 
+    a += - inner(p, div(v))*dx
          
     # Mass conservation with backward Euler
-    a += inner(s0*p, q)*dx + inner(alpha*div(eta), q)*dx + dt*inner(div(u), q)*dx
-    L += dt*inner(f2, q)*dx + inner(s0*p_0, q)*dx + inner(alpha*div(eta_0), q)*dx          
+    a += inner(s0*p, q)*dx
+    a += inner(alpha*div(eta),q)*dx
+    a += dt*inner(div(u), q)*dx #
+
+    L += dt*inner(f2, q)*dx 
+    L += inner(s0*p_0, q)*dx 
+    L += inner(alpha*div(eta_0), q)*dx          
+
+
+
 
     ### Set boundary conditions
-
+    # initialise empty Dirichlet list
+    bcs_strong =[]
 
     # Handle natural bcs
-
     n = FacetNormal(mesh)
     ds = Measure('ds', domain=mesh, subdomain_data=bdries)
 
 
-    # For elasticity
+    # Traction condition 
     for tag, value in traction_bcs:
         L += inner(value, phi)*ds(tag)
 
 
+    # Flow boundary conditions
+    # Strongly
+    bcs_strong.extend([DirichletBC(W.sub(1).sub(0),Constant(0), bdries, tag) for tag, value in flux_bcs])
+    # todo : I would like a general way to impose normal flux.
 
-    # Flow boundary condition 
-    #for tag, value in flux_bcs:
-    #    L += dt*(1/kappa)*inner(value, q)*ds(tag)
+    
 
-    # I would move the pressure condition in the Dirichlet conditions
+    # Pressure boundary conditions
     for tag, value in pressure_bcs:
-        L += -inner(value, dot(v, n))*ds(tag)
+        L += -alpha*inner(value, dot(phi, n))*ds(tag)  -inner(value, dot(v, n))*ds(tag)
 
-    # Dirichlet conditions for pressure and displacements
-    bcs_strong =[]
-    # Impose fluid pressure
-
-    #bcs_strong.extend([DirichletBC(W.sub(2), value, bdries, tag) for tag, value in pressure_bcs])
-
+    
+    # Displacement 
     # Impose displacement bcs 
     bcs_strong.extend([DirichletBC(W.sub(0), value, bdries, tag) for tag, value in displacement_bcs])
 
@@ -151,8 +160,7 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
     # todo : I would like a general way to impose normal displacement.
 
 
-    # Impose flow
-    bcs_strong.extend([DirichletBC(W.sub(1),value, bdries, tag) for tag, value in flux_bcs])
+
 
 
 
