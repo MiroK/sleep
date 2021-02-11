@@ -139,14 +139,14 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
 
     # Flow boundary conditions
     # Strongly
-    bcs_strong.extend([DirichletBC(W.sub(1).sub(0),Constant(0), bdries, tag) for tag, value in flux_bcs])
+    bcs_strong.extend([DirichletBC(W.sub(1),value, bdries, tag) for tag, value in flux_bcs])
     # todo : I would like a general way to impose normal flux.
 
     
 
     # Pressure boundary conditions
     for tag, value in pressure_bcs:
-        L += -alpha*inner(value, dot(phi, n))*ds(tag)  -inner(value, dot(v, n))*ds(tag)
+        L += -inner(value, dot(v, n))*ds(tag)-alpha*inner(value, dot(phi, n))*ds(tag)
 
     
     # Displacement 
