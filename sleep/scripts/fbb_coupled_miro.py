@@ -239,7 +239,7 @@ tfinal=1
 dt = fluid_parameters['dt']  
 
 us_out, ps_out,etas_out  = File('./output/coupledm/us.pvd'), File('./output/coupledm/ps.pvd'), File('./output/coupledm/etas.pvd')
-uf_out, pf_out = File('./output/coupled/uf.pvd'), File('./output/coupled/pf.pvd')
+uf_out, pf_out = File('./output/coupledm/uf.pvd'), File('./output/coupledm/pf.pvd')
 
 while time < tfinal:
     time += dt
