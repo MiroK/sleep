@@ -114,7 +114,7 @@ t1 = sympy.symbols("t1")
 t2 = sympy.symbols("t2")
 sin = sympy.sin
 
-amp=3e-4 #cm
+amp=1e-4 #cm
 f=1 #Hz
 
 functionU = amp*sin(2*pi*f*t1) # displacement
@@ -238,8 +238,8 @@ tfinal=1
 
 dt = fluid_parameters['dt']  
 
-us_out, ps_out,etas_out  = File('./output/coupled3/us.pvd'), File('./output/coupled3/ps.pvd'), File('./output/coupled3/etas.pvd')
-uf_out, pf_out = File('./output/coupled3/uf.pvd'), File('./output/coupled3/pf.pvd')
+us_out, ps_out,etas_out  = File('./output/coupled/us.pvd'), File('./output/coupled/ps.pvd'), File('./output/coupled/etas.pvd')
+uf_out, pf_out = File('./output/coupled/uf.pvd'), File('./output/coupled/pf.pvd')
 
 while time < tfinal:
     time += dt
