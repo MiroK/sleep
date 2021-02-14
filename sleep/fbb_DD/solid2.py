@@ -146,7 +146,7 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
 
     # Pressure boundary conditions
     for tag, value in pressure_bcs:
-        L += -inner(value, dot(v, n))*ds(tag)-alpha*inner(value, dot(phi, n))*ds(tag)
+        L += -inner(value, dot(v, n))*ds(tag)#-alpha*inner(value, dot(phi, n))*ds(tag)
 
     
     # Displacement 

@@ -114,7 +114,7 @@ t1 = sympy.symbols("t1")
 t2 = sympy.symbols("t2")
 sin = sympy.sin
 
-amp=1e-4 #cm
+amp=3e-4 #cm
 f=1 #Hz
 
 functionU = amp*sin(2*pi*f*t1) # displacement
@@ -151,7 +151,10 @@ velocity_f_iface = Function(VectorFunctionSpace(mesh_f, 'DG', 1))  # FIXME: DG0?
 
 etas_iface = Function(VectorFunctionSpace(mesh_s, 'CG', 2))
 aux = Function(VectorFunctionSpace(mesh_s, 'CG', 2))  # Auxiliary for u_s.np.np
+
+
 ps_iface = Function(FunctionSpace(mesh_s, 'DG', 0))
+tractions_iface = Function(VectorFunctionSpace(mesh_s, 'DG', 1))  # FIXME: DG0? to be safe
 
 # For ALE we will cary the displacement to fluid domain
 etaf_iface = Function(VectorFunctionSpace(mesh_f, 'CG', 2))
@@ -174,7 +177,7 @@ bcs_ale = {'dirichlet': [(facet_lookup['F_bottom'], ale_u_bottom),
 bcs_solid = {
     'elasticity': {
         'displacement': [],
-        'traction': [(facet_lookup['I_bottom'], Constant((0,0))),
+        'traction': [(facet_lookup['I_bottom'], tractions_iface),
                     (facet_lookup['S2_left'], Constant((0,0))),
                     (facet_lookup['S1_left'], Constant((0,0)))],
         'displacement_x' : [(facet_lookup['S2_right'],Constant((0))),
@@ -232,14 +235,14 @@ solid_parameters['dt'] = 1E-3  # FIXME
 time = 0.
 timestep=0
 
-Toutput=1E-2
+Toutput=1E-3
 
 tfinal=1
 
 dt = fluid_parameters['dt']  
 
-us_out, ps_out,etas_out  = File('./output/coupled/us.pvd'), File('./output/coupled/ps.pvd'), File('./output/coupled/etas.pvd')
-uf_out, pf_out = File('./output/coupled/uf.pvd'), File('./output/coupled/pf.pvd')
+us_out, ps_out,etas_out  = File('./output/coupled3/us.pvd'), File('./output/coupled3/ps.pvd'), File('./output/coupled3/etas.pvd')
+uf_out, pf_out = File('./output/coupled3/uf.pvd'), File('./output/coupled3/pf.pvd')
 
 while time < tfinal:
     time += dt
@@ -249,44 +252,21 @@ while time < tfinal:
         hasattr(expr, 't1') and setattr(expr, 't1', time)
         hasattr(expr, 't2') and setattr(expr, 't2', time+dt)
 
-    # Given that eta_0 and p_0 we compute traction sigma_f.n_f = -sigma_p.n_p
-    #transfer_into(traction_f_iface,
-    #              -dot(sigma_p(eta_s0, p_s0), n_p),
-    #              interface) 
-
-
 
     # Using traction solve fluid problem
     u_f, p_f = solve_fluid(Wf, f=Constant((0, 0)), u_n=uf_n, p_n=pf_n,  bdries=fluid_bdries, bcs=bcs_fluid,
                            parameters=fluid_parameters)
     
-    ## In solid we want to prescribe pressure = -sigma_f.n_f.n_f
-    #transfer_into(ps_iface,
-    #              -dot(n_f, dot(sigma_f(u_f, p_f), n_f)),
-    #              interface)
-
     # In biot interface we impose the continuity of fluid pressure
     transfer_into(ps_iface,
                   p_f,
                   interface)   
 
+    # and continuity of normal stress
+    transfer_into(tractions_iface,
+                  -dot(sigma_f(u_f, p_f), n_f),
+                  interface) 
 
-
-    # We set the displacement combining
-    # uf.nf + (d/dt eta + u_s).np = 0 and uf.tau - d/dt eta. tau = 0 into
-    # uf - d/dt eta - (u_s.nf)*nf = 0 i.e eta = dt*(uf - (u_s.nf)*nf) + eta_0 
-    #transfer_into(etas_iface,
-    #              Constant(dt)*u_f,
-    #              interface)  # eta = dt*uf
-
-    #transfer_into(aux,
-    #              Constant(dt)*dot(u_s0, n_p)*n_p,
-    #              (solid_bdries, iface_tag))
-
-    #etas_iface.vector().axpy(-dt, aux.vector()) # eta = dt*uf - dt*u_s.np*np
-    #etas_iface.vector().axpy(1.0, eta_s0.vector()) # eta += eta_0
-    
-    #solid_parameters['T0'] = time   
     eta_s, u_s, p_s = solve_solid(Ws, f1=Constant((0, 0)), f2=Constant(0), eta_0=eta_s00, p_0=p_s0,
                                             bdries=solid_bdries, bcs=bcs_solid, parameters=solid_parameters)
 
@@ -297,7 +277,7 @@ while time < tfinal:
     transfer_into(etaf_iface, eta_s, interface)
 
     
-    # Finally for ALE
+    # Solve ALE problem in the fluid domain
     eta_f = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale,
                       parameters=ale_parameters)
     
