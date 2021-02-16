@@ -2,7 +2,7 @@
 # dencies
 from sleep.utils.make_mesh_cpp import make_mesh
 from collections import defaultdict
-from itertools import chain
+from itertools import chain, permutations
 import dolfin as df
 import numpy as np
 import operator
@@ -152,40 +152,43 @@ class EmbeddedMesh(df.Mesh):
         for entity in tagged_entities:
             # We need to be able to embed all vertices in order to get a cell
             entity_vertices = e2v(entity).tolist()
-            # The observation is that in working case there is one cell that
-            # can embedded all vertices of the entity
-            the_cell = set()
-            # The tree collisions can give false positives so shall compare
-            # coordinates with
-            is_reachable = True
-            while is_reachable and entity_vertices:
-                v = entity_vertices.pop()
-                v_cells = tree.compute_collisions(df.Point(x_parent[v]))
-                # True isect is a cell which has v
-                v_cells = [c for c in v_cells if min(np.linalg.norm(x_parent[v] - x[c2v(c)], 2, 1)) < tol]
-
-                # Such cell is for such not the one that collides
-                is_reachable = bool(len(v_cells))            
-                (is_reachable and the_cell) and the_cell.intersection_update(v_cells)
-                (is_reachable and not the_cell) and the_cell.update(v_cells)
-
-            if is_reachable:
-                the_cell, = the_cell  # The uniqueness
-                entity_mapping[the_cell] = entity
+            # First seek self cells that collide with the vertex.
+            v_cells = set(sum((list(tree.compute_collisions(df.Point(x_parent[v])))
+                               for v in entity_vertices), []))
+            
+            emp = np.mean(x_parent[entity_vertices], axis=0)
+            # The one closest by midpoint criterion better embed the entity
+            v_cells = sorted(v_cells,
+                             key = lambda c: np.linalg.norm(emp - np.mean(x[c2v(c)], axis=0)),
+                             reverse=True)
+            
+            found = False
+            # Ideally only one pop is needed as the last(v_cells) is the
+            # best match in terms of midpoints. That cell should be able
+            # embed the vertices
+            while v_cells and not found:
+                the_cell = v_cells.pop()
+                cell_vertices = c2v(the_cell)
+                cell_vertices_x = x[cell_vertices]
                 
                 # And now pair the vertices
-                entity_vertices = e2v(entity).tolist()
+                entity_vertices = e2v(entity)
+                entity_vertices_x = x_parent[entity_vertices]
+                # There must exist a permutation of cell vertices that matches
+                # the entity
+                perms = permutations(range(len(cell_vertices)), len(cell_vertices))
+                while not found:
+                    perm = list(next(perms))
+                    found = np.linalg.norm(entity_vertices_x - cell_vertices_x[perm]) < tol
+                    
+            assert found, 'Embedding failed'
+            # Set mappings
+            for ev, cv in zip(entity_vertices, cell_vertices[perm]):
+                vertex_mapping[cv] = ev
+            entity_mapping[the_cell] = entity
 
-                for vp in c2v(the_cell):
-                    if vp not in vertex_mapping:
-                        dist = np.linalg.norm(x[vp] - x_parent[entity_vertices], 2, 1)
-                        i = np.argmin(dist)
-                        assert dist[i] < tol, dist[i]
-                        
-                        vertex_mapping[vp] = entity_vertices[i]
-                    entity_vertices.remove(vertex_mapping[vp])
-
-        self.parent_entity_map[parent_mesh.id()] = {0: vertex_mapping, tdim: entity_mapping}
+        self.parent_entity_map[parent_mesh.id()] = {0: vertex_mapping,
+                                                    tdim: entity_mapping}
 
         return self.parent_entity_map[parent_mesh.id()]
 
