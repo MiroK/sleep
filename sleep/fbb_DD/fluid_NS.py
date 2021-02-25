@@ -83,6 +83,8 @@ def solve_fluid(W, f, u_n, p_n, bdries, bcs, parameters):
     mu  = Constant(parameters['mu'])
     rho = Constant(parameters['rho'])
 
+    nu=mu/rho #?
+
     # Define strain-rate tensor
     def epsilon(u):
         return sym(nabla_grad(u))
@@ -95,7 +97,7 @@ def solve_fluid(W, f, u_n, p_n, bdries, bcs, parameters):
     # Tentative velocity, solve to u_
     U = 0.5*(u + u_n)
     F1 = (1./k)*inner(u - u_n, v)*dx + inner(dot(grad(u_n), u_n), v)*dx\
-         + mu*inner(grad(U), grad(v))*dx + inner(grad(p_n), v)*dx\
+         + nu*inner(grad(U), grad(v))*dx + inner(grad(p_n), v)*dx\
          - inner(f, v)*dx
     a1, L1 = system(F1)
 
@@ -112,6 +114,8 @@ def solve_fluid(W, f, u_n, p_n, bdries, bcs, parameters):
     A2 = assemble(a2)
     A3 = assemble(a3)
 
+    solveru = KrylovSolver('gmres', 'ilu')
+    solverp = KrylovSolver('gmres', 'petsc_amg')
     #-----------------------------
 
     # Apply boundary conditions to matrices
@@ -121,16 +125,16 @@ def solve_fluid(W, f, u_n, p_n, bdries, bcs, parameters):
     # Step 1: Tentative velocity step
     b1 = assemble(L1)
     [bc.apply(b1) for bc in bcu]
-    solve(A1, u_.vector(), b1)
+    solveru.solve(A1, u_.vector(), b1)
 
     # Step 2: Pressure correction step
     b2 = assemble(L2)
     [bc.apply(b2) for bc in bcp]
-    solve(A2, p_.vector(), b2)
+    solverp.solve(A2, p_.vector(), b2)
 
     # Step 3: Velocity correction step
     b3 = assemble(L3)
-    solve(A3, u_.vector(), b3)
+    solveru.solve(A3, u_.vector(), b3)
 
     # Update previous solution
     u_n.assign(u_)
