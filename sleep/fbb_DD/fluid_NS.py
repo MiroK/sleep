@@ -7,14 +7,10 @@ import ulfy  # https://github.com/MiroK/ulfy
 
 # Problem
 # 
-# NS equations
+# NS equations in cartesian coordinates
 #
-# with following bcs:
-# 1) velocity boundary sets velocity vector
-# 2) Traction boundary sets sigma.n
-# 3) Pressure boundary set sigma.n.n (pressure part) and (sigma.n).t
-#
-# is solved on FE space W
+# IPCS scheme
+
 
 def solve_fluid(W, f, u_n, p_n, bdries, bcs, parameters):
     '''Return velocity and pressure'''
@@ -146,9 +142,3 @@ def solve_fluid(W, f, u_n, p_n, bdries, bcs, parameters):
 
     return u_,p_
 
-
-# --------------------------------------------------------------------
-
-if __name__ == '__main__':
-
-    print('hi')
