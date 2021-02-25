@@ -163,6 +163,7 @@ class EmbeddedMesh(df.Mesh):
                              reverse=True)
             
             found = False
+            distances = defaultdict(list)
             # Ideally only one pop is needed as the last(v_cells) is the
             # best match in terms of midpoints. That cell should be able
             # embed the vertices
@@ -174,14 +175,17 @@ class EmbeddedMesh(df.Mesh):
                 # And now pair the vertices
                 entity_vertices = e2v(entity)
                 entity_vertices_x = x_parent[entity_vertices]
-                # There must exist a permutation of cell vertices that matches
+                # There eventually must exist a permutation of cell vertices that matches
                 # the entity
                 perms = permutations(range(len(cell_vertices)), len(cell_vertices))
-                while not found:
-                    perm = list(next(perms))
-                    found = np.linalg.norm(entity_vertices_x - cell_vertices_x[perm]) < tol
+                for perm in map(list, perms):
+                    dist = np.linalg.norm(entity_vertices_x - cell_vertices_x[perm])
+                    found = dist  < tol
+                    # Keep track of geometrical matches for debugging
+                    distances[the_cell].append(dist)
+                    if found: break
                     
-            assert found, 'Embedding failed'
+            assert found, f'Embedding failed {distances}'
             # Set mappings
             for ev, cv in zip(entity_vertices, cell_vertices[perm]):
                 vertex_mapping[cv] = ev

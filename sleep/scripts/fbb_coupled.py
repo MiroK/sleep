@@ -246,6 +246,7 @@ uf_out, pf_out = File('./output/coupled3/uf.pvd'), File('./output/coupled3/pf.pv
 
 while time < tfinal:
     time += dt
+    print('time', time)
     # Set sources if they are time dependent
     for expr in driving_expressions:
         hasattr(expr, 'time') and setattr(expr, 'time', time)
