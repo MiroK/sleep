@@ -17,7 +17,7 @@ import ulfy  # https://github.com/MiroK/ulfy
 #
 # is solved on FE space W
 
-def solve_fluid(W, f, bdries, bcs, parameters):
+def solve_fluid(W, f,u_n,p_n, bdries, bcs, parameters):
     '''Return velocity and pressure'''
     info('Solving Stokes for %d unknowns' % W.dim())
     mesh = W.mesh()

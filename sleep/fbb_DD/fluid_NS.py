@@ -76,8 +76,6 @@ def solve_fluid(W, f, u_n, p_n, bdries, bcs, parameters):
 
 
     # Parameters
-    U   = 0.5*(u_n + u)
-
     k = Constant(parameters['dt'])
 
     n   = FacetNormal(mesh)
@@ -94,22 +92,20 @@ def solve_fluid(W, f, u_n, p_n, bdries, bcs, parameters):
         return 2*mu*epsilon(u) - p*Identity(len(u))
 
 
-    # Define variational problem for step 1
-    F1 = rho*dot((u - u_n) / k, v)*dx + \
-        rho*dot(dot(u_n, nabla_grad(u_n)), v)*dx \
-    + inner(sigma(U, p_n), epsilon(v))*dx \
-    + dot(p_n*n, v)*ds - dot(mu*nabla_grad(U)*n, v)*ds \
-    - dot(f, v)*dx
-    a1 = lhs(F1)
-    L1 = rhs(F1)
+    # Tentative velocity, solve to u_
+    U = 0.5*(u + u_n)
+    F1 = (1./k)*inner(u - u_n, v)*dx + inner(dot(grad(u_n), u_n), v)*dx\
+         + mu*inner(grad(U), grad(v))*dx + inner(grad(p_n), v)*dx\
+         - inner(f, v)*dx
+    a1, L1 = system(F1)
 
-    # Define variational problem for step 2
-    a2 = dot(nabla_grad(p), nabla_grad(q))*dx
-    L2 = dot(nabla_grad(p_n), nabla_grad(q))*dx - (1/k)*div(u_)*q*dx
+    # Projection, solve to p_
+    F2 = inner(grad(p - p_n), grad(q))*dx + (1./k)*q*div(u_)*dx
+    a2, L2 = system(F2)
 
-    # Define variational problem for step 3
-    a3 = dot(u, v)*dx
-    L3 = dot(u_, v)*dx - k*dot(nabla_grad(p_ - p_n), v)*dx
+    # Finalize, solve to u_
+    F3 = (1./k)*inner(u - u_, v)*dx + inner(grad(p_ - p_n), v)*dx 
+    a3, L3 = system(F3)
 
     # Assemble matrices
     A1 = assemble(a1)

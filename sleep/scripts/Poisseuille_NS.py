@@ -14,23 +14,24 @@ from dolfin import *
 from mshr import Polygon, generate_mesh
 
 #time parameters
-Toutput=1e-3
-tfinal=5e-3
-dt=1e-3
+Toutput=1e-2
+tfinal=5e-2
+dt=1e-4
 
 # Geometry params
 Rv = 30e-4 # centimeters
 Rpvs =40e-4 # centimeters
 L = 100e-4 # centimeters
 
-resolution=100
+#(4, 8, 16, 32, 64)
+N=8
 
 # BC parameter
-delta_P=1330
+delta_P=1330 # dyn/cm2
 
 # material parameters
-mu=7e-3
-rho=1
+mu=7e-3 #dyn·s/cm2
+rho=1 # gram7cm3
 
 # output folder name
 outputfolder='Poisseuille_NS'
@@ -57,11 +58,13 @@ uf_out, pf_out= File('./output/'+outputfolder+'/uf.pvd'), File('./output/'+outpu
 facets_out=File('./output/'+outputfolder+'/facets.pvd')
 
 #Geometry computations
-domain_vertices = [Point(0, Rv),Point(L, Rv),Point(L, Rpvs),Point(0, Rpvs)]
+#domain_vertices = [Point(0, Rv),Point(L, Rv),Point(L, Rpvs),Point(0, Rpvs)]
 
 # Meshing 
-domain = Polygon(domain_vertices)
-mesh_f = generate_mesh(domain,resolution)
+#domain = Polygon(domain_vertices)
+#mesh_f = generate_mesh(domain,resolution)
+
+mesh_f = RectangleMesh(Point(0, Rv), Point(L, Rpvs), 10*N, N)
 
 fluid_bdries = MeshFunction("size_t", mesh_f, mesh_f.topology().dim()-1,0)
 
@@ -75,7 +78,7 @@ ymin=y.min()
 ymax=y.max()
 
 
-tol=(Rpvs-Rv)/resolution/2 #cm
+tol=(Rpvs-Rv)/N/2 #cm
 
 class Boundary_left(SubDomain):
     def inside(self, x, on_boundary):
@@ -154,12 +157,24 @@ bcs_fluid = {'velocity': [(facet_lookup['y_min'], Constant((0,0))),
                           (facet_lookup['x_max'], Constant(delta_P))]}
 
 
+
+
+
+
+
 # Define functions for solutions at previous and current time steps
 #  Initialise with analytical solution
-#uf_n = project(Constant((0, 0)), Wf.sub(0).collapse())
-#pf_n =  project(Constant(0), Wf.sub(1).collapse())
-uf_n = project(u_exact, Wf.sub(0).collapse())
-pf_n =  project(p_exact, Wf.sub(1).collapse())
+uf_n = project(Constant((0, 0)), Wf.sub(0).collapse())
+pf_n =  project(Constant(0), Wf.sub(1).collapse())
+#uf_n = project(u_exact, Wf.sub(0).collapse())
+#pf_n =  project(p_exact, Wf.sub(1).collapse())
+
+#add random perturbation
+#eps=0.01
+#from numpy import random
+#import numpy as np
+#uf_n.vector().set_local(np.array(uf_n.vector())*(1+eps*(0.5-random.random(uf_n.vector().size()))))
+#pf_n.vector().set_local(np.array(pf_n.vector())*(1+eps*(0.5-random.random(pf_n.vector().size()))))
 
 # Time loop
 time = 0.
@@ -208,9 +223,9 @@ while time < tfinal:
         pf_out << (pf_, time)
 
 with open('./output/'+outputfolder+'/erroru.txt', 'a') as csv:
-    row=[resolution]+erroru
+    row=[N]+erroru
     csv.write(('%i'+', %e'*len(erroru)+'\n')%tuple(row))
 
 with open('./output/'+outputfolder+'/errorp.txt', 'a') as csv:
-    row=[resolution]+errorp
+    row=[N]+errorp
     csv.write(('%i'+', %e'*len(errorp)+'\n')%tuple(row))
