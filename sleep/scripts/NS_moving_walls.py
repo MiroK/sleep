@@ -5,7 +5,7 @@
 
 from sleep.fbb_DD.domain_transfer import transfer_into
 from sleep.fbb_DD.solid import solve_solid
-from sleep.fbb_DD.fluid_NS import solve_fluid
+from sleep.fbb_DD.fluid_NS2 import solve_fluid
 from sleep.fbb_DD.ale import solve_ale
 from sleep.utils import EmbeddedMesh
 from sleep.mesh import load_mesh2d
@@ -98,6 +98,8 @@ bcs_ale = {'dirichlet': [(facet_lookup['F_bottom'], ale_u_bottom),
 uf_n = project(Constant((0, 0)), Wf.sub(0).collapse())
 pf_n =  project(Constant(0), Wf.sub(1).collapse())
 
+etaf_n= project(Constant((0,0)), Va)
+
 
 # Time loop
 time = 0.
@@ -108,7 +110,9 @@ Toutput=0.01
 
 tfinal=1
 
-uf_out, pf_out, etaf_out = File('./output/NS_moving_wall/uf.pvd'), File('./output/NS_moving_wall/pf.pvd'), File('./output/NS_moving_wall/etaf.pvd')
+outputfolder='FMW_grad'
+
+uf_out, pf_out, etaf_out = File('./output/'+outputfolder+'/uf.pvd'), File('./output/'+outputfolder+'/pf.pvd'), File('./output/'+outputfolder+'/etaf.pvd')
 
 uf_n.rename("uf", "tmp")
 pf_n.rename("pf", "tmp")
@@ -126,7 +130,7 @@ while time < tfinal:
         hasattr(expr, 't2') and setattr(expr, 't2', time+fluid_parameters['dt'])
 
     # Solve fluid problem
-    uf_, pf_ = solve_fluid(Wf, f=Constant((0, 0)), u_n=uf_n, p_n=pf_n,  bdries=fluid_bdries, bcs=bcs_fluid,
+    uf_, pf_ = solve_fluid(Wf, f=Constant((0, 0)), u_n=uf_n, p_n=pf_n, bdries=fluid_bdries, bcs=bcs_fluid,
                            parameters=fluid_parameters)
 
     # Update current solution
@@ -140,6 +144,8 @@ while time < tfinal:
     eta_f = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale,
                       parameters=ale_parameters)
     
+    etaf_n.assign(eta_f)
+
     # Move domains
     ALE.move(mesh_f, eta_f)
 
