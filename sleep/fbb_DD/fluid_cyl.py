@@ -74,7 +74,7 @@ def solve_fluid(W, f, bdries, bcs, parameters):
     z, r = SpatialCoordinate(mesh)
     # All but bc terms
     mu = parameters['mu']
-    system = (inner(mu*(Grad(u)), (Grad(v)))*r*dx - inner(p, Div(v))*r*dx
+    system = (inner(mu*sym(Grad(u)), sym(Grad(v)))*r*dx - inner(p, Div(v))*r*dx
               -inner(q, Div(u))*r*dx - inner(f, v)*r*dx)
 
     # u x n
@@ -96,7 +96,9 @@ def solve_fluid(W, f, bdries, bcs, parameters):
         # impose normal component of normal traction do be equal to the imposed pressure
         system += -inner(-value, dot(v, n))*r*ds(tag) # note the minus sign before the pressure term in the stress
         # impose  dot(n, grad(u))=0
-        #system += -inner(Constant((0, 0)), v)*ds(tag)
+        n_ = as_vector((n[0], n[1], Constant(0)))
+        v_ = as_vector((v[0], v[1], Constant(0)*v[0]))
+        system += inner(dot(Grad(u), n_), v_)*r*ds(tag)
 
     # velocity bcs go onto the matrix
     bcs_D = [DirichletBC(W.sub(0), value, bdries, tag) for tag, value in velocity_bcs]
@@ -152,7 +154,9 @@ if __name__ == '__main__':
                             Constant(0)*p_true))
 
         bcs = {'velocity': [(3, Constant((0, 0))), (4, Constant((0, 0)))],
-               'traction': [(1, Constant((0, 0))), (2, Constant((-delta_P, 0)))]}
+               # 'pressure': [(1, Constant(0)), (2, Constant(-delta_P))],
+               'traction': [(1, Constant((0, 0))), (2, Constant((-delta_P, 0)))]
+        }
 
         W = FunctionSpace(mesh, Welm)
         uh, ph = solve_fluid(W, f=forcing, bdries=bdries, bcs=bcs,
