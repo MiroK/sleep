@@ -5,7 +5,7 @@
 
 from sleep.fbb_DD.domain_transfer import transfer_into
 from sleep.fbb_DD.solid import solve_solid
-from sleep.fbb_DD.fluid_NS2 import solve_fluid
+from sleep.fbb_DD.fluid import solve_fluid
 from sleep.fbb_DD.ale import solve_ale
 from sleep.utils import EmbeddedMesh
 from sleep.mesh import load_mesh2d
@@ -30,7 +30,7 @@ fluid_bdries = mesh_f.translate_markers(facet_f, fluid_markers)
 
 # Parameters setup ------------------------------------------------ FIXME
 
-fluid_parameters = {'mu': 7e-2, 'rho': 1, 'dt':1e-4}
+fluid_parameters = {'mu': 7e-3, 'rho': 1, 'dt':1e-2}
 ale_parameters = {'kappa': Constant(1.0)}
 
 
@@ -85,7 +85,7 @@ driving_expressions = (uf_bottom,ale_u_bottom)
 # Now we wire up
 bcs_fluid = {'velocity': [(facet_lookup['F_bottom'], uf_bottom),
                             ((facet_lookup['I_bottom'], uf_top))],
-            'velocity_x': [(facet_lookup['F_right'], Constant(0))],
+            'velocity_x': [(facet_lookup['F_right'], Constant(0))], # I am missing a BC in the tangential direction
              'traction': [],  
              'pressure': [(facet_lookup['F_left'], pf_in)]}
 

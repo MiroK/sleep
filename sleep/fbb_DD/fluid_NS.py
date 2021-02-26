@@ -5,11 +5,10 @@ import operator
 import sympy as sp
 import ulfy  # https://github.com/MiroK/ulfy
 import numpy as np
-# Problem
-# 
+
 # NS equations in cartesian coordinates
-#
 # IPCS scheme
+# Explicit
 
 
 def solve_fluid(W, f, u_n, p_n, bdries, bcs, parameters):
@@ -92,6 +91,7 @@ def solve_fluid(W, f, u_n, p_n, bdries, bcs, parameters):
         return  0.5*(grad(v) + grad(v).T)
 
     # Tentative velocity step (sigma formulation)
+    # todo : add mesh velocity second row
     U = 0.5*(u_n + u)
     F1 = rho*(1/k)*inner(v, u - u_n)*dx \
         + rho*inner(v, grad(u_n)*(u_n))*dx \

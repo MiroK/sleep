@@ -11,7 +11,7 @@ import ulfy  # https://github.com/MiroK/ulfy
 # -div(u) = 0 in Omega
 #
 # with following bcs:
-# 1) velocity boundary sets velocity vector
+# 1) Dirichlet boundary sets velocity vector
 # 2) Traction boundary sets sigma.n
 # 3) Pressure boundary set sigma.n.n (pressure part) and (sigma.n).t
 #
@@ -24,17 +24,19 @@ def solve_fluid(W, f,u_n,p_n, bdries, bcs, parameters):
     assert mesh.geometry().dim() == 2
     # Let's see about boundary conditions - they need to be specified on
     # every boundary.
-    assert all(k in ('velocity', 'traction', 'pressure') for k in bcs)
+    assert all(k in ('velocity','velocity_x', 'traction', 'pressure') for k in bcs)
     # The tags must be found in bdries
     velocity_bcs = bcs.get('velocity', ())  
+    velocity_x_bcs = bcs.get('velocity_x', ()) 
     traction_bcs = bcs.get('traction', ())
     pressure_bcs = bcs.get('pressure', ())
     # Tuple of pairs (tag, boundary value) is expected
     velocity_tags = set(item[0] for item in velocity_bcs)
+    velocity_x_tags = set(item[0] for item in velocity_x_bcs)
     traction_tags = set(item[0] for item in traction_bcs)
     pressure_tags = set(item[0] for item in pressure_bcs)
 
-    tags = (velocity_tags, traction_tags, pressure_tags)
+    tags = (velocity_tags, velocity_x_tags, traction_tags, pressure_tags)
     # Boundary conditions must be on distinct domains
     for this, that in itertools.combinations(tags, 2):
         if this and that: assert not this & that
@@ -50,8 +52,8 @@ def solve_fluid(W, f,u_n,p_n, bdries, bcs, parameters):
     assert len(u.ufl_shape) == 1 and len(p.ufl_shape) == 0
     # All but bc terms
     mu = parameters['mu']
-    system = (inner(2*mu*sym(grad(u)), sym(grad(v)))*dx - inner(p, div(v))*dx-inner(q, div(u))*dx - inner(f, v)*dx)
-
+    system = (inner(2*mu*sym(grad(u)), sym(grad(v)))*dx - inner(p, div(v))*dx
+              -inner(q, div(u))*dx - inner(f, v)*dx)
     # Handle natural bcs
     n = FacetNormal(mesh)
     ds = Measure('ds', domain=mesh, subdomain_data=bdries)
@@ -61,19 +63,16 @@ def solve_fluid(W, f,u_n,p_n, bdries, bcs, parameters):
     for tag, value in traction_bcs:
         system += -inner(value, v)*ds(tag)
 
-    # For the pressure condition : 
-    # We need to impose the normal component of the normal traction on the inlet and outlet to be the pressures we want on each surface
-    # and force the flow to be normal to those surfaces <-- this is incompatible with the moving top and bottom surfaces
-    # so force the normal component of the grad u to be zero
-
     for tag, value in pressure_bcs:
-        # impose normal component of normal traction do be equal to the imposed pressure
-        system += -inner(-value, dot(v, n))*ds(tag) # note the minus sign before the pressure term in the stress
-        # impose  dot(n, grad(u))=0
-        #system += -inner(Constant((0, 0)), v)*ds(tag)
+        R = Constant(((0, -1), (1, 0)))
+        tau = dot(R, n)
+        n_part=value
+        t_part=Constant(0)
+        system += -(inner(n_part, dot(v, n))*ds(tag) + inner(t_part, dot(v, tau))*ds(tag))
 
-    # velocity bcs go onto the matrix
+    # Dirichlet velocity bcs go onto the matrix
     bcs_D = [DirichletBC(W.sub(0), value, bdries, tag) for tag, value in velocity_bcs]
+    bcs_D += [DirichletBC(W.sub(0).sub(0), value, bdries, tag) for tag, value in velocity_x_bcs]
 
     # Discrete problem
     a, L = lhs(system), rhs(system)
@@ -174,7 +173,7 @@ if __name__ == '__main__':
         # I guess left and right sigma.n.n ~ pressure and we set tangential
         # to 0. Alternative is to have u.t in combination with sigma.n.n
         # but if domain not aligned with axis u.t is tricky - Nitsche?
-        bcs = {'velocity': [(3, u_exact)],
+        bcs = {'dirichlet': [(3, u_exact)],
                'traction': [(4, tractions[4])],
                'pressure': [(1, stress_components[1]), (2, stress_components[2])]}
 

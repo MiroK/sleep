@@ -6,7 +6,7 @@
 
 from sleep.fbb_DD.domain_transfer import transfer_into
 from sleep.fbb_DD.solid import solve_solid
-from sleep.fbb_DD.fluid_NS import solve_fluid
+from sleep.fbb_DD.fluid_S import solve_fluid
 from sleep.fbb_DD.ale import solve_ale
 from sleep.utils import EmbeddedMesh
 from sleep.mesh import load_mesh2d
@@ -22,16 +22,15 @@ L = 100e-4 # centimeters
 #(4, 8, 16, 32, 64)
 N=8
 
-
 #time parameters
-Toutput=1e-2
-tfinal=5e-2
-dt=1e-3
+Toutput=1e-5
+tfinal=1e-5
+dt=1e-5
 
 # approximate CFL
 DX=(Rpvs-Rv)/N
 Uapprox=500e-4 #upper limit for extected max velocity
-dt=min(dt,0.5*DX/Uapprox)
+dt=min(dt,0.25*DX/Uapprox)
 print('Time step is : %e'%dt)
 
 # BC parameter
@@ -171,13 +170,14 @@ bcs_fluid = {'velocity': [(facet_lookup['y_min'], Constant((0,0))),
 
 
 
-# Define functions for solutions at previous and current time steps
-#  Initialise with analytical solution
+# Initialisation : 2 possibilities
+# 1/ Initialise with zero fields
 uf_n = project(Constant((0, 0)), Wf.sub(0).collapse())
 pf_n =  project(Constant(0), Wf.sub(1).collapse())
+
+# 2/ Initialise with analytical solution
 #uf_n = project(u_exact, Wf.sub(0).collapse())
 #pf_n =  project(p_exact, Wf.sub(1).collapse())
-
 #add random perturbation
 #eps=0.01
 #from numpy import random
@@ -185,19 +185,18 @@ pf_n =  project(Constant(0), Wf.sub(1).collapse())
 #uf_n.vector().set_local(np.array(uf_n.vector())*(1+eps*(0.5-random.random(uf_n.vector().size()))))
 #pf_n.vector().set_local(np.array(pf_n.vector())*(1+eps*(0.5-random.random(pf_n.vector().size()))))
 
-# Time loop
-time = 0.
-timestep=0
-
-
 
 
 # Save initial state
 uf_n.rename("uf", "tmp")
 pf_n.rename("pf", "tmp")
 
-uf_out << (uf_n, time)
-pf_out << (pf_n, time)
+uf_out << (uf_n, 0)
+pf_out << (pf_n, 0)
+
+# Time loop
+time = 0.
+timestep=0
 
 erroru=[]
 errorp=[]
