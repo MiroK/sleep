@@ -2,7 +2,7 @@
 # This is a poisseuille flow where the analytical solution is known
 # We use the NS fluid solver
 # Fluid parameters values corresponds to the PVS problem
-# Pressure difference : 1 mmHg = 1330 dyn/cm2
+# Pressure difference : 0.01 mmHg = 13.33 dyn/cm2
 
 from sleep.fbb_DD.domain_transfer import transfer_into
 from sleep.fbb_DD.solid import solve_solid
@@ -16,7 +16,7 @@ from mshr import Polygon, generate_mesh
 #time parameters
 Toutput=1e-2
 tfinal=5e-2
-dt=1e-4
+dt=1e-5
 
 # Geometry params
 Rv = 30e-4 # centimeters
@@ -27,7 +27,7 @@ L = 100e-4 # centimeters
 N=8
 
 # BC parameter
-delta_P=1330 # dyn/cm2
+delta_P=13.33 # dyn/cm2
 
 # material parameters
 mu=7e-3 #dyn·s/cm2
@@ -164,17 +164,17 @@ bcs_fluid = {'velocity': [(facet_lookup['y_min'], Constant((0,0))),
 
 # Define functions for solutions at previous and current time steps
 #  Initialise with analytical solution
-uf_n = project(Constant((0, 0)), Wf.sub(0).collapse())
-pf_n =  project(Constant(0), Wf.sub(1).collapse())
-#uf_n = project(u_exact, Wf.sub(0).collapse())
-#pf_n =  project(p_exact, Wf.sub(1).collapse())
+#uf_n = project(Constant((0, 0)), Wf.sub(0).collapse())
+#pf_n =  project(Constant(0), Wf.sub(1).collapse())
+uf_n = project(u_exact, Wf.sub(0).collapse())
+pf_n =  project(p_exact, Wf.sub(1).collapse())
 
 #add random perturbation
-#eps=0.01
-#from numpy import random
-#import numpy as np
-#uf_n.vector().set_local(np.array(uf_n.vector())*(1+eps*(0.5-random.random(uf_n.vector().size()))))
-#pf_n.vector().set_local(np.array(pf_n.vector())*(1+eps*(0.5-random.random(pf_n.vector().size()))))
+eps=0.01
+from numpy import random
+import numpy as np
+uf_n.vector().set_local(np.array(uf_n.vector())*(1+eps*(0.5-random.random(uf_n.vector().size()))))
+pf_n.vector().set_local(np.array(pf_n.vector())*(1+eps*(0.5-random.random(pf_n.vector().size()))))
 
 # Time loop
 time = 0.

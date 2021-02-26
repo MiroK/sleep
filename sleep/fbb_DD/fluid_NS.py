@@ -83,39 +83,45 @@ def solve_fluid(W, f, u_n, p_n, bdries, bcs, parameters):
     mu  = Constant(parameters['mu'])
     rho = Constant(parameters['rho'])
 
-    nu=mu/rho #?
+    # Define Cauchy stress tensor
+    def sigma(u,p):
+        return 2.0*mu*0.5*(grad(u) + grad(u).T)  - p*Identity(len(u))
 
-    # Define strain-rate tensor
-    def epsilon(u):
-        return sym(nabla_grad(u))
+    # Define symmetric gradient
+    def epsilon(v):
+        return  0.5*(grad(v) + grad(v).T)
 
-    # Define stress tensor
-    def sigma(u, p):
-        return 2*mu*epsilon(u) - p*Identity(len(u))
+    # Tentative velocity step (sigma formulation)
+    U = 0.5*(u_n + u)
+    F1 = rho*(1/k)*inner(v, u - u_n)*dx \
+        + rho*inner(v, grad(u_n)*(u_n))*dx \
+        + inner(epsilon(v), sigma(U, p_n))*dx \
+        - inner(v, f)*dx \
+        + inner(v, p_n*n)*ds \
+        - mu*inner(grad(U).T*n, v)*ds
+    a1 = lhs(F1)
+    L1 = rhs(F1)
 
+    # Pressure correction
+    a2 = inner(grad(q), k*grad(p))*dx
+    L2 = inner(grad(q), k*grad(p_n))*dx - q*rho*div(u_)*dx
 
-    # Tentative velocity, solve to u_
-    U = 0.5*(u + u_n)
-    F1 = (1./k)*inner(u - u_n, v)*dx + inner(dot(grad(u_n), u_n), v)*dx\
-         + nu*inner(grad(U), grad(v))*dx + inner(grad(p_n), v)*dx\
-         - inner(f, v)*dx
-    a1, L1 = system(F1)
-
-    # Projection, solve to p_
-    F2 = inner(grad(p - p_n), grad(q))*dx + (1./k)*q*div(u_)*dx
-    a2, L2 = system(F2)
-
-    # Finalize, solve to u_
-    F3 = (1./k)*inner(u - u_, v)*dx + inner(grad(p_ - p_n), v)*dx 
-    a3, L3 = system(F3)
+    # Velocity correction
+    a3 = inner(v, rho*u)*dx
+    L3 = inner(v, rho*u_)*dx + inner(v, k*grad(p_n - p_))*dx
 
     # Assemble matrices
     A1 = assemble(a1)
     A2 = assemble(a2)
     A3 = assemble(a3)
 
+    # Create solvers
+
     solveru = KrylovSolver('gmres', 'ilu')
     solverp = KrylovSolver('gmres', 'petsc_amg')
+
+    solveru.parameters["relative_tolerance"] = 1e-14
+    solverp.parameters["relative_tolerance"] = 1e-14
     #-----------------------------
 
     # Apply boundary conditions to matrices
