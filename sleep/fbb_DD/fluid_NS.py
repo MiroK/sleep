@@ -4,7 +4,7 @@ import itertools
 import operator
 import sympy as sp
 import ulfy  # https://github.com/MiroK/ulfy
-
+import numpy as np
 # Problem
 # 
 # NS equations in cartesian coordinates
@@ -140,11 +140,29 @@ def solve_fluid(W, f, u_n, p_n, bdries, bcs, parameters):
 
     # Step 3: Velocity correction step
     b3 = assemble(L3)
+    #[bc.apply(A3, b3) for bc in bcu]
     solveru.solve(A3, u_.vector(), b3)
 
     # Update previous solution
     u_n.assign(u_)
     p_n.assign(p_)
+
+
+    # Check for CFL number
+     
+    DG = FunctionSpace(mesh, 'DG', 0)
+    vdg= TestFunction(DG)
+    h    = [cell.circumradius() for cell in cells(mesh)]
+    area = [cell.volume()   for cell in cells(mesh)]
+
+    # estimate cfl number
+    uavg = assemble(sqrt(u_[0]**2+u_[1]**2)*vdg*dx)
+    uavg = np.array(uavg.get_local())/area
+    cfl  = float(k * max(uavg/h))
+
+    if cfl>10 :
+        print('CFL is too large')
+        exit()
 
     return u_,p_
 
