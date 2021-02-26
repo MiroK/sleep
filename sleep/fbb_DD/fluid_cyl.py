@@ -26,11 +26,15 @@ def Grad(u):
                       (0,        0,     ur/r)))
 
 def Div(u):
-    return tr(Grad(u))
+    if len(u.ufl_shape) == 1:
+        return tr(Grad(u))
+    return as_vector(tuple(Div(u[i, :]) for i in range(u.ufl_shape[0])))
 
 
 strain = lambda u, mu: 2*mu*sym(Grad(u))
-sigma = lambda u, p, mu: strain(u, mu) - p*Identity(3)
+sigma = lambda u, p, mu: strain(u, mu) - as_matrix(((p, Constant(0), Constant(0)),
+                                                    (0, Constant(0), Constant(0)),
+                                                    (Constant(0), Constant(0), Constant(0))))
 
 
 def solve_fluid(W, f, bdries, bcs, parameters):
@@ -70,9 +74,12 @@ def solve_fluid(W, f, bdries, bcs, parameters):
     z, r = SpatialCoordinate(mesh)
     # All but bc terms
     mu = parameters['mu']
-    system = (inner(2*mu*sym(Grad(u)), sym(Grad(v)))*r*dx - inner(p, Div(v))*r*dx
+    system = (inner(mu*(Grad(u)), (Grad(v)))*r*dx - inner(p, Div(v))*r*dx
               -inner(q, Div(u))*r*dx - inner(f, v)*r*dx)
 
+    # u x n
+    # 
+    
     # Handle natural bcs
     n = FacetNormal(mesh)
     ds = Measure('ds', domain=mesh, subdomain_data=bdries)
@@ -116,14 +123,6 @@ if __name__ == '__main__':
     rIn, rOut, length = 0.5, 1, 3
     delta_P = 2
 
-    p_exact = Expression('delta_P*(length-x[0])/length', degree=5,
-                         delta_P=delta_P, length=length)
-
-    u_exact = Expression(('delta_P/L/4/mu*(std::log(x[1]/rOut)/std::log(rOut/rIn)*(rOut*rOut - rIn*rIn) + (rOut*rOut - x[1]*x[1]))',
-                          '0'),
-                         rIn=rIn, rOut=rOut, delta_P=delta_P, mu=mu_value, L=length,
-                         degree=4)
-    
     forcing = Constant((0, 0))
                          
     # Taylor-Hood
@@ -132,9 +131,11 @@ if __name__ == '__main__':
     Welm = MixedElement([Velm, Qelm])
 
     material_parameters = {'mu': Constant(mu_value)}
-    for n in (4, 8, 16, 32, 64):
+
+    eu0, ep0, h0 = None, None, None
+    for n in (16, 32, 64, 128):
         mesh = RectangleMesh(Point(0, rIn), Point(length, rOut), n, n)
-        # Setup similar to coupled problem ...
+
         bdries = MeshFunction('size_t', mesh, mesh.topology().dim()-1, 0)
         CompiledSubDomain('near(x[0], 0)').mark(bdries, 1)
         CompiledSubDomain('near(x[0], L)', L=length).mark(bdries, 2)
@@ -143,42 +144,44 @@ if __name__ == '__main__':
 
         assert set(bdries.array()) == set((0, 1, 2, 3, 4))
         
-        bcs = {'velocity': [(3, u_exact), (4, u_exact)],
-               'traction': [(1, p_exact*Constant((1, 0))),
-                            (2, p_exact*Constant((1, 0)))]}
+        z, r = SpatialCoordinate(mesh)
+
+        delta_P, L, rIn, rOut, mu = map(Constant, (delta_P, length, rIn, rOut, mu_value))
+        p_true = delta_P*z/length
+        u_true = as_vector((-delta_P/L/4/mu*(ln(r/rOut)/ln(rOut/rIn)*(rOut**2 - rIn**2) + (rOut**2 - r**2)),
+                            Constant(0)*p_true))
+
+        bcs = {'velocity': [(3, Constant((0, 0))), (4, Constant((0, 0)))],
+               'traction': [(1, Constant((0, 0))), (2, Constant((-delta_P, 0)))]}
 
         W = FunctionSpace(mesh, Welm)
         uh, ph = solve_fluid(W, f=forcing, bdries=bdries, bcs=bcs,
                              parameters=material_parameters)
+
         # Errors
-        eu = errornorm(u_exact, uh, 'H1', degree_rise=2)
-        ep = errornorm(p_exact, ph, 'L2', degree_rise=2)
-
-        print('|u-uh|_1', eu, '|p-ph|_0', ep)
-
-        u = interpolate(u_exact, uh.function_space())
-        p = interpolate(p_exact, ph.function_space())
-
-        tress = sigma(u, p, Constant(mu_value))
-        train = strain(u, Constant(mu_value))
-        ds_ = Measure('ds', domain=mesh, subdomain_data=bdries)
-        n = Constant((1, 0, 0))
-        print(assemble((dot(tress, n)[0])*ds_(2)), assemble(p*ds_(2)))
-        print(assemble((dot(tress, n)[1])*ds_(1)))        
-
-        print(assemble((dot(train, n)[0])*ds_(2)), assemble(p*ds_(2)))
-        print(assemble((dot(train, n)[1])*ds_(1)))        
+        eu = sqrt(assemble(inner(grad(u_true - uh), grad(u_true - uh))*r*dx))
+        ep = sqrt(assemble(inner(ph - p_true, ph - p_true)*r*dx))
+        h = float(uh.function_space().mesh().hmin())
+        
+        if eu0 is not None:
+            rate_u = ln(eu/eu0)/ln(h/h0)
+            rate_p = ln(ep/ep0)/ln(h/h0)
+        else:
+            rate_u, rate_p = -1, -1
+        
+        print('|u-uh|_1 = {:.4E}[{:1.2f}] |p-ph|_0 = {:.4E}[{:1.2f}]'.format(eu, rate_u, ep, rate_p))
+        eu0, ep0, h0 = eu, ep, h
         
     File('uh.pvd') << uh
-    u = interpolate(u_exact, uh.function_space())
+    u = project(u_true, uh.function_space())
     File('u.pvd') << u
     eu = uh
     eu.vector().axpy(-1, u.vector())
     File('eu.pvd') << eu
 
     File('ph.pvd') << ph
-    p = interpolate(p_exact, ph.function_space())
-    File('p.pvd') << p
-    ep = ph
-    ep.vector().axpy(-1, p.vector())
-    File('ep.pvd') << ep
+    # p = interpolate(p_exact, ph.function_space())
+    # File('p.pvd') << p
+    # ep = ph
+    # ep.vector().axpy(-1, p.vector())
+    # File('ep.pvd') << ep
