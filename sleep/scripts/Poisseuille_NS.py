@@ -13,10 +13,6 @@ from sleep.mesh import load_mesh2d
 from dolfin import *
 from mshr import Polygon, generate_mesh
 
-#time parameters
-Toutput=1e-2
-tfinal=5e-2
-dt=1e-5
 
 # Geometry params
 Rv = 30e-4 # centimeters
@@ -25,6 +21,18 @@ L = 100e-4 # centimeters
 
 #(4, 8, 16, 32, 64)
 N=8
+
+
+#time parameters
+Toutput=1e-2
+tfinal=5e-2
+dt=1e-3
+
+# approximate CFL
+DX=(Rpvs-Rv)/N
+Uapprox=500e-4 #upper limit for extected max velocity
+dt=min(dt,0.5*DX/Uapprox)
+print('Time step is : %e'%dt)
 
 # BC parameter
 delta_P=13.33 # dyn/cm2
@@ -106,10 +114,11 @@ bleft = Boundary_left()
 bright = Boundary_right()
 
 
-bleft.mark(fluid_bdries, 1) 
 bbottom.mark(fluid_bdries,  2) 
-bright.mark(fluid_bdries,  3) 
 btop.mark(fluid_bdries,  4)  
+bleft.mark(fluid_bdries, 1) 
+bright.mark(fluid_bdries,  3) 
+
  
 
 facet_lookup = {'x_min': 1 ,'y_min': 2, 'x_max': 3, 'y_max': 4}
@@ -164,17 +173,17 @@ bcs_fluid = {'velocity': [(facet_lookup['y_min'], Constant((0,0))),
 
 # Define functions for solutions at previous and current time steps
 #  Initialise with analytical solution
-#uf_n = project(Constant((0, 0)), Wf.sub(0).collapse())
-#pf_n =  project(Constant(0), Wf.sub(1).collapse())
-uf_n = project(u_exact, Wf.sub(0).collapse())
-pf_n =  project(p_exact, Wf.sub(1).collapse())
+uf_n = project(Constant((0, 0)), Wf.sub(0).collapse())
+pf_n =  project(Constant(0), Wf.sub(1).collapse())
+#uf_n = project(u_exact, Wf.sub(0).collapse())
+#pf_n =  project(p_exact, Wf.sub(1).collapse())
 
 #add random perturbation
-eps=0.01
-from numpy import random
-import numpy as np
-uf_n.vector().set_local(np.array(uf_n.vector())*(1+eps*(0.5-random.random(uf_n.vector().size()))))
-pf_n.vector().set_local(np.array(pf_n.vector())*(1+eps*(0.5-random.random(pf_n.vector().size()))))
+#eps=0.01
+#from numpy import random
+#import numpy as np
+#uf_n.vector().set_local(np.array(uf_n.vector())*(1+eps*(0.5-random.random(uf_n.vector().size()))))
+#pf_n.vector().set_local(np.array(pf_n.vector())*(1+eps*(0.5-random.random(pf_n.vector().size()))))
 
 # Time loop
 time = 0.
