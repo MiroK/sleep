@@ -55,6 +55,14 @@ def solve_fluid(W, f,u_n,p_n, bdries, bcs, parameters):
     mu  = Constant(parameters['mu'])
     rho = Constant(parameters['rho'])
 
+    # Define Cauchy stress tensor
+    def sigma(u,p):
+        return 2.0*mu*0.5*(grad(u) + grad(u).T)  - p*Identity(len(u))
+
+    # Define symmetric gradient
+    def epsilon(v):
+        return  0.5*(grad(v) + grad(v).T)
+
     system = (inner(2*mu*sym(grad(u)), sym(grad(v)))*dx - inner(p, div(v))*dx-inner(q, div(u))*dx - inner(f, v)*dx)
     
     # Add time derivative term
@@ -64,7 +72,6 @@ def solve_fluid(W, f,u_n,p_n, bdries, bcs, parameters):
     n = FacetNormal(mesh)
     ds = Measure('ds', domain=mesh, subdomain_data=bdries)
     
-    sigma = lambda u, p, mu=mu: 2*mu*sym(grad(u)) - p*Identity(len(u))
 
     for tag, value in traction_bcs:
         system += -inner(value, v)*ds(tag)
@@ -73,17 +80,14 @@ def solve_fluid(W, f,u_n,p_n, bdries, bcs, parameters):
     # We need to impose the normal component of the normal traction on the inlet and outlet to be the pressures we want on each surface
     # and force the normal component of the grad u to be zero
 
+    tau=dot(epsilon(u),n)
 
     for tag, value in pressure_bcs:
-        R = Constant(((0, -1), (1, 0)))
-        tau = dot(R, n)
-        n_part = value
-        t_part = Constant(0)
         # set the normal component of traction to the imposed pressure value
         system += inner(value, dot(v, n))*ds(tag)
-        # expression of the tangent component of traction
-        system += inner(dot(dot(grad(u),n),tau),dot(v,tau))*ds(tag)
-        # how to impose normal component of dot(grad(u),n) =0 ?
+        system += 2*mu*inner(dot(tau,n),dot(v,n))*ds(tag)
+        system += -2*mu*inner(tau,v)*ds(tag)
+
 
 
     # velocity bcs go onto the matrix
