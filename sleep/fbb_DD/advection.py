@@ -60,16 +60,15 @@ def solve_adv_diff(W, velocity, f, phi_0, bdries, bcs, parameters):
     
     # SUPG stabilization
     if parameters.get('supg', False):
-        assert False
-        h = CellSize(mesh)
-        n = FacetNormal(mesh)
-        theta = Constant(1.0)
+        info(' Adding SUPG stabilization')
+        h = CellDiameter(mesh)
 
-        nb = sqrt(inner(b,b))
-        tau = 0.5*h*pow(4.0/(Pe*h)+2.0*nb, -1.0)
+        mag = sqrt(inner(velocity, velocity))
+        stab = 1/(4*kappa/h/h + 2*mag/h)
+
         # Test the residuum againt         
-        system += stab*inner(((1/dt)*(phi - phi_0) - mu*div(grad(phi)) + dot(velocity, grad(phi))) - f,
-                             dot(velocity, grad(psi)))*dx
+        system += stab*inner(((1/dt)*(phi - phi_0) - kappa*div(grad(phi)) + dot(velocity, grad(phi))) - f,
+                             dot(velocity, grad(psi)))*dx(degree=10)
 
     # Handle natural bcs
     n = FacetNormal(mesh)
@@ -93,7 +92,6 @@ def solve_adv_diff(W, velocity, f, phi_0, bdries, bcs, parameters):
     # Temporal integration loop
     T0 = parameters['T0']
     for k in range(parameters['nsteps']):
-        T0 += dt(0)
         # Update source if possible
         for foo in bdry_expressions + [f]:
             hasattr(foo, 't') and setattr(foo, 't', T0)
@@ -103,6 +101,8 @@ def solve_adv_diff(W, velocity, f, phi_0, bdries, bcs, parameters):
         solver.solve(phi_0.vector(), b)
         k % 100 == 0 and info('  Adv-Diff at step (%d, %g) |phi_h|=%g' % (k, T0, phi_0.vector().norm('l2')))    
 
+        T0 += dt(0)
+        
     return phi_0, T0
 
 
@@ -126,7 +126,7 @@ def mms_ad(kappa_value):
     # What we want to substitute
     x, y, kappa_ = sp.symbols('x y kappa')
     time_, alpha_ = sp.symbols('time alpha')
-    velocity_ = 0*sp.Matrix([-(y-0.5), (x-0.5)])
+    velocity_ = sp.Matrix([-(y-0.5), (x-0.5)])
 
     # Expressions
     phi_ = sp.sin(pi*(x + y))*sp.exp(1-alpha_*time_)
@@ -211,8 +211,8 @@ if __name__ == '__main__':
     CompiledSubDomain('near(x[1], 0)').mark(bdries, 3)
     CompiledSubDomain('near(x[1], 1)').mark(bdries, 4)
 
-    bcs = {'concentration': [(t, phi_exact) for t in (1, 2, 3, 4)],
-           'flux': []}#(t, fluxes[t]) for t in (1, 2, 3, 4)]}
+    bcs = {'concentration': [(t, phi_exact) for t in (1, 2)],
+           'flux': [(t, fluxes[t]) for t in (3, 4)]}
 
     W = FunctionSpace(mesh, Welm)
 
@@ -223,7 +223,8 @@ if __name__ == '__main__':
         parameters = {'kappa': Constant(kappa_value),    
                       'dt': dt,
                       'nsteps': int(1./dt),
-                      'T0': 0.}
+                      'T0': 0.,
+                      'supg': True}
         
         # Reset time
         for thing in (phi_exact, velocity, forcing):
@@ -241,7 +242,7 @@ if __name__ == '__main__':
         phi_h.vector().axpy(-1, interpolate(phi_exact, phi_h.function_space()).vector())
         File('p.pvd') << phi_h
 
-        print('@ T = {} |c-ch|_1 = {}'.format(T, e))
+        print('@ T = {} with dt = {} |c-ch|_1 = {}'.format(T, dt, e))
         history.append((dt, mesh.hmin(), e))
     print(history)
     
