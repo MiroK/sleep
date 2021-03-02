@@ -17,24 +17,27 @@ import ulfy  # https://github.com/MiroK/ulfy
 #
 # is solved on FE space W
 
-def solve_fluid(W, f, bdries, bcs, parameters):
+def solve_fluid(W, f,u_n, p_n, bdries, bcs, parameters):
     '''Return velocity and pressure'''
     info('Solving Stokes for %d unknowns' % W.dim())
     mesh = W.mesh()
     assert mesh.geometry().dim() == 2
     # Let's see about boundary conditions - they need to be specified on
     # every boundary.
-    assert all(k in ('velocity', 'traction', 'pressure') for k in bcs)
+    assert all(k in ('velocity', 'traction', 'pressure','resistance') for k in bcs)
     # The tags must be found in bdries
     velocity_bcs = bcs.get('velocity', ())  
     traction_bcs = bcs.get('traction', ())
     pressure_bcs = bcs.get('pressure', ())
+    resistance_bcs=bcs.get('resistance', ())
     # Tuple of pairs (tag, boundary value) is expected
     velocity_tags = set(item[0] for item in velocity_bcs)
     traction_tags = set(item[0] for item in traction_bcs)
     pressure_tags = set(item[0] for item in pressure_bcs)
+    resistance_tags = set(item[0] for item in resistance_bcs)
 
-    tags = (velocity_tags, traction_tags, pressure_tags)
+    tags = (velocity_tags, traction_tags, pressure_tags, resistance_tags)
+
     # Boundary conditions must be on distinct domains
     for this, that in itertools.combinations(tags, 2):
         if this and that: assert not this & that
@@ -46,6 +49,11 @@ def solve_fluid(W, f, bdries, bcs, parameters):
                  
     u, p = TrialFunctions(W)
     v, q = TestFunctions(W)
+
+    # Previous solutions
+    V, Q = W.sub(0).collapse(), W.sub(1).collapse()
+    u_n = interpolate(u_n, V)    
+    p_n = interpolate(p_n, Q)
 
     assert len(u.ufl_shape) == 1 and len(p.ufl_shape) == 0
     # All but bc terms
@@ -63,14 +71,24 @@ def solve_fluid(W, f, bdries, bcs, parameters):
 
     # For the pressure condition : 
     # We need to impose the normal component of the normal traction on the inlet and outlet to be the pressures we want on each surface
-    # and force the flow to be normal to those surfaces <-- this is incompatible with the moving top and bottom surfaces
-    # so force the normal component of the grad u to be zero
+    # and force the normal component of the grad u to be zero
 
     for tag, value in pressure_bcs:
         # impose normal component of normal traction do be equal to the imposed pressure
         system += -inner(-value, dot(v, n))*ds(tag) # note the minus sign before the pressure term in the stress
         # impose  dot(n, grad(u))=0
-        #system += -inner(Constant((0, 0)), v)*ds(tag)
+        system += inner(dot(grad(u), n), v)*ds(tag)
+
+    for tag,value in resistance_bcs:
+        R=value[0]
+        p0=value[1]
+        Q=assemble(dot(u_n, n)*ds(tag))
+        # Compute pressure to impose according to the flow at previous time step and resistance.
+        pvalue=Q*R+p0
+        system += -inner(-pvalue, dot(v, n))*ds(tag) # note the minus sign before the pressure term in the stress
+        # impose  dot(n, grad(u))=0
+        system += inner(dot(grad(u), n), v)*ds(tag)        
+
 
     # velocity bcs go onto the matrix
     bcs_D = [DirichletBC(W.sub(0), value, bdries, tag) for tag, value in velocity_bcs]
