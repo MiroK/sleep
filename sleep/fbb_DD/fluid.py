@@ -215,7 +215,7 @@ def solve_fluid_cyl(W, f, bdries, bcs, parameters):
 
 if __name__ == '__main__':
 
-    mu_value = 1E0
+    mu_value = 2E0
     data = mms_stokes(mu_value=mu_value)
 
     # -- Convergence test case
