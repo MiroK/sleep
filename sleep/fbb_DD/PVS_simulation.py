@@ -6,11 +6,13 @@ import os
 
 import numpy as np
 
+from sleep.fbb_DD.advection import solve_adv_diff
 from sleep.fbb_DD.fluid import solve_fluid
 from sleep.fbb_DD.ale import solve_ale
 from sleep.utils import EmbeddedMesh
 from sleep.mesh import load_mesh2d
 from dolfin import *
+
 
 #logging.debug
 #logging.info
@@ -40,12 +42,6 @@ def line(A, B, nsteps):
     A=np.array(A)
     B=np.array(B)
     return A + (B-A)*np.linspace(0, 1, nsteps).reshape((-1, 1))
-
-
-
-# to remove when solver ready
-def solve_adv_diff(W, velocity, f, phi_0, bdries, bcs, parameters) :
-    return phi_0
 
 
 def title1(string):
@@ -210,7 +206,7 @@ def PVS_simulation(args):
         logging.info('right BC will be set to the resistance assumption')
 
     fluid_parameters = {'mu': mu, 'rho': rho, 'dt':dt_fluid}
-    tracer_parameters={'D': D, 'dt':dt_advdiff}
+    tracer_parameters={'kappa': D, 'dt':dt_advdiff}
     ale_parameters = {'kappa': kappa}
 
 
@@ -390,16 +386,13 @@ def PVS_simulation(args):
     if lateral_bc=='free' :
         bcs_tracer = {'concentration': [(facet_lookup['x_max'], Constant(0)),
                                         (facet_lookup['x_min'], Constant(0))],
-                    'flux': [(facet_lookup['y_max'], Constant((0, 0))),
-                            (facet_lookup['y_min'], Constant((0, 0)))]}
+                    'flux': [(facet_lookup['y_max'], Constant(0)),
+                            (facet_lookup['y_min'], Constant(0))]}
     else :
         bcs_tracer = {'concentration': [(facet_lookup['x_min'], Constant(0))],
                     'flux': [(facet_lookup['x_max'], Constant(0)),
                             (facet_lookup['y_max'], Constant(0)),
                             (facet_lookup['y_min'], Constant(0))]}
-
-
-
 
 
     bcs_ale = {'dirichlet': [(facet_lookup['y_min'], uale_bottom),
@@ -481,9 +474,14 @@ def PVS_simulation(args):
                             parameters=fluid_parameters)
 
 
+        tracer_parameters["T0"]=time
+        tracer_parameters["nsteps"]=1
+        tracer_parameters["dt"]=dt
+
         # Solve tracer problem
-        c_ = solve_adv_diff(Ct, velocity=uf_, f=Constant(0), phi_0=c_n,
+        c_, T0= solve_adv_diff(Ct, velocity=uf_, f=Constant(0), phi_0=c_n,
                                   bdries=fluid_bdries, bcs=bcs_tracer, parameters=tracer_parameters)
+
 
         # Update current solution
         uf_n.assign(uf_)
