@@ -19,20 +19,39 @@ from dolfin import *
 #logging.critical
 
 
-#todo : logging initialisation + set for tracer
-#todo: add parameter for initialisationt tracer
-#todo : add ALE step
-#todo : logging for simulaiton run
-#todo : add resistance BC
+#todo : add resistance BC ---> FFC compile again during the run. Is it normal? How to remove the info from the log ?
 #todo : write 1D profiles for u p c in a file
-#todo : return the 1D profiles
 
 #todo : external script to postprocess u p c profiles : figure , compute coef dispertion
 
+
+# Define line function for 1D slice evaluation
+def line_sample(line, f, fill=np.nan):
+    values = fill*np.ones(len(line))
+    for i, xi in enumerate(line):
+        try:
+            values[i] = f(xi)
+        except RuntimeError:
+            continue
+    return values
+
+
+def line(A, B, nsteps):
+    A=np.array(A)
+    B=np.array(B)
+    return A + (B-A)*np.linspace(0, 1, nsteps).reshape((-1, 1))
+
+
+
+# to remove when solver ready
+def solve_adv_diff(W, velocity, f, phi_0, bdries, bcs, parameters) :
+    return phi_0
+
+
 def title1(string):
-    line1='\n *'*100+'\n'
+    line1='\n'+'*'*100+'\n'
     line2='**   '+string+'\n'
-    line3='*'*100+'\n'
+    line3='*'*100
     return line1 + line2 + line3
 
 
@@ -56,9 +75,21 @@ def PVS_simulation(args):
     if not os.path.exists(outputfolder+'/log'):
         os.makedirs(outputfolder+'/log')
 
+    if not os.path.exists(outputfolder+'/profiles'):
+        os.makedirs(outputfolder+'/profiles')
+
+    if not os.path.exists(outputfolder+'/fields'):
+        os.makedirs(outputfolder+'/fields')
+
     # Create output files
-    uf_out, pf_out= File(outputfolder+'/uf.pvd'), File(outputfolder+'/pf.pvd')
-    facets_out=File(outputfolder+'/facets.pvd')
+
+    #txt files
+    csv_p=open(outputfolder+'profiles'+'/pressure.txt', 'w')
+
+    #pvd files
+    uf_out, pf_out= File(outputfolder+'fields'+'/uf.pvd'), File(outputfolder+'fields'+'/pf.pvd')
+    c_out= File(outputfolder+'fields'+'/c.pvd')
+    facets_out=File(outputfolder+'fields'+'/facets.pvd')
 
     # Create logger
     logger = logging.getLogger()
@@ -121,8 +152,7 @@ def PVS_simulation(args):
     
     logging.info('N axial : %i'%Nl)
     logging.info('N radial : %e'%Nr)
-    logging.info('cell size : %e'%(np.sqrt(DR**2+DY**2)))
-    logging.info('nb cells: %i'%(Nl*Nr*2))
+
     
 
     #time parameters
@@ -135,12 +165,15 @@ def PVS_simulation(args):
     logging.info('output period : %e s'%toutput)
     logging.info('time step : %e s'%dt)
 
-    # approximate CFL
+    # approximate CFL for fluid solver
     Uapprox=500e-4 #upper limit for extected max velocity
     CFL_dt=0.25*DY/Uapprox
     if  CFL_dt < dt :
-        logging.warning('The specified time step of %.2e s does not fullfil the CFL condition. New time step : %.2e s'%(dt, CFL_dt))
-    dt=min(dt,CFL_dt)
+        logging.warning('The specified time step of %.2e s does not fullfil the fluid CFL condition. New fluid time step : %.2e s'%(dt, CFL_dt))
+    dt_fluid=min(dt,CFL_dt)
+
+    # approximate CFL for tracer solver
+    dt_advdiff=dt
 
 
     # material parameters
@@ -153,21 +186,39 @@ def PVS_simulation(args):
 
     logging.info('\n* Tracer properties')
     D=args.diffusion_coef
-
+    sigma_gauss=args.sigma
     logging.info('Free diffusion coef: %e cm2/s'%D)
+    logging.info('STD of initial gaussian profile: %e '%sigma_gauss)
 
     logging.info('\n * ALE')
     kappa=args.ale_parameter
     logging.info('ALE parameter: %e '%kappa)
 
+    logging.info('\n * Lateral BC')
+    resistance=args.resistance
+    logging.info('inner resistance: %e '%resistance)
+    if resistance == 0 :
+        lateral_bc='free'
+        logging.info('right BC will be set to the free assumption')
+    elif resistance < 0 :
+        lateral_bc='noflow'
+        logging.info('right BC will be set to the no flow assumption')
+    else :
+        lateral_bc='resistance'
+        logging.info('right BC will be set to the resistance assumption')
 
-    #FEM space
-    Vf_elm = VectorElement('Lagrange', triangle, 2)
-    Qf_elm = FiniteElement('Lagrange', triangle, 1)
+    fluid_parameters = {'mu': mu, 'rho': rho, 'dt':dt_fluid}
+    tracer_parameters={'D': D, 'dt':dt_advdiff}
+    ale_parameters = {'kappa': kappa}
+
 
     # Mesh
+    logging.info(title1('Meshing'))
 
-    mesh_f = RectangleMesh(Point(0, Rv), Point(L, Rpvs), Nl, Nr)
+    logging.info('cell size : %e cm'%(np.sqrt(DR**2+DY**2)))
+    logging.info('nb cells: %i'%(Nl*Nr*2))
+
+    mesh_f= RectangleMesh(Point(0, Rv), Point(L, Rpvs), Nl, Nr)
 
     fluid_bdries = MeshFunction("size_t", mesh_f, mesh_f.topology().dim()-1,0)
 
@@ -220,119 +271,244 @@ def PVS_simulation(args):
 
     facets_out << fluid_bdries
 
-    # Parameters setup ------------------------------------------------ 
 
-    fluid_parameters = {'mu': mu, 'rho': rho, 'dt':dt}
-    ale_parameters = {'kappa': kappa}
+    #FEM space
 
-    # Setup fem spaces ---------------------------------------------------
+    logging.info(title1("Set FEM spaces"))
+
+    logging.info('\n * Fluid')
+    Vf_elm = VectorElement('Lagrange', triangle, 2)
+    Qf_elm = FiniteElement('Lagrange', triangle, 1)
     Wf_elm = MixedElement([Vf_elm, Qf_elm])
     Wf = FunctionSpace(mesh_f, Wf_elm)
+    logging.info('Velocity : "Lagrange", triangle, 2')
+    logging.info('Pressure : "Lagrange", triangle, 1')
+
+    logging.info('\n * Tracer')
+    Ct_elm = FiniteElement('Lagrange', triangle, 1)
+    Ct = FunctionSpace(mesh_f, Ct_elm)
+    logging.info('Concentration : "Lagrange", triangle, 1')
 
 
-    # Setup of boundary conditions ----------------------------------- 
+    logging.info('\n * ALE')
+    Va_elm = VectorElement('Lagrange', triangle, 1)
+    Va = FunctionSpace(mesh_f, Va_elm)
+    logging.info('ALE displacement: "Lagrange", triangle, 1')
+    
+
+
+    # Setup of boundary conditions
     logging.info(title1("Boundary conditions"))
-    import sympy
-    ts = sympy.symbols("time")
-    sin = sympy.sin
 
-    amp=1e-4 #cm
-    f=1 #Hz
+    import sympy
+    tn = sympy.symbols("tn")
+    tnp1 = sympy.symbols("tnp1")
+    sin = sympy.sin
 
     logging.info('\n * wall motion parameters')
     ai=args.ai
     fi=args.fi
     phii=args.phii
-    logging.info('ai (dimensioless): '+'*e'*len(ai)%ai)
-    logging.info('fi (Hz) : '+'*e'*len(fi)%fi)
-    logging.info('phii (rad) : '+'*e'*len(phii)%phii)
+    logging.info('ai (dimensionless): '+'%e '*len(ai)%tuple(ai))
+    logging.info('fi (Hz) : '+'%e '*len(fi)%tuple(fi))
+    logging.info('phii (rad) : '+'%e '*len(phii)%tuple(phii))
 
-    functionU = Rv*sum([a*sin(2*pi*f*ts+phi) for a,f,phi in zip(ai,fi,phii)]) # displacement
+    functionU = Rv*sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]) # displacement
     U_vessel = sympy.printing.ccode(functionU)
 
-    functionV = sympy.diff(functionU,ts) # velocity
+    functionV = sympy.diff(functionU,tn) # velocity
     V_vessel = sympy.printing.ccode(functionV)
 
-   
+    #Delta U for ALE. I dont really like this
+    functionUALE=Rv*sum([a*sin(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)])-Rv*sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)])
+    UALE_vessel = sympy.printing.ccode(functionUALE)   
+
+    vf_bottom = Expression(('0',V_vessel ), tn = 0, degree=2)   # no slip no gap condition at vessel wall 
+    uale_bottom = Expression(('0',UALE_vessel ), tn = 0, tnp1=1, degree=2) # displacement for ALE at vessel wall 
+
+    logging.info('\n * Lateral assumption')
+    logging.info(lateral_bc)
+
     logging.info('\n * Fluid')
     logging.info('Left : zero pressure')
-    logging.info('Right : resistance')
+
+    if lateral_bc=='free' :
+        logging.info('Right : zero pressure')
+    elif lateral_bc=='resistance' :
+        logging.info('Right : resistance')
+    else :
+        logging.info('Right : no flow')
+
     logging.info('Top : no slip no gap fixed wall')
     logging.info('Bottom : no slip no gap moving wall')
 
     logging.info('\n * Tracer concentration')
-    logging.info('Left : zero')
-    logging.info('Right : no flux')
+    logging.info('Left : zero concentration')
+
+    if lateral_bc=='free' :
+        logging.info('Right : zero concentration')
+    else :
+        logging.info('Right : no flux')
+
+
     logging.info('Top : no flux')
     logging.info('Bottom : no flux')
 
+    logging.info('\n * ALE')
+    logging.info('Left : no flux')
+    logging.info('Right : no flux')
+    logging.info('Top : no displacement')
+    logging.info('Bottom : vessel displacement')
+
     # Now we wire up
-    bcs_fluid = {'velocity': [(facet_lookup['y_min'], Constant((0,0))),
-                            (facet_lookup['y_max'], Constant((0,0)))],
-                'traction': [],  
-                'pressure': [(facet_lookup['x_min'], Constant(0)),
-                            (facet_lookup['x_max'], Constant(0))]}
+
+    if lateral_bc=='free' :
+        bcs_fluid = {'velocity': [(facet_lookup['y_min'],vf_bottom),
+                                (facet_lookup['y_max'], Constant((0,0)))],
+                    'traction': [],  
+                    'pressure': [(facet_lookup['x_min'], Constant(0)),
+                                (facet_lookup['x_max'], Constant(0))],
+                    'resistance':[]}
+
+    elif lateral_bc=='resistance' :
+        bcs_fluid = {'velocity': [(facet_lookup['y_min'],vf_bottom),
+                                (facet_lookup['y_max'], Constant((0,0)))],
+                    'traction': [],  
+                    'pressure': [(facet_lookup['x_min'], Constant(0))],
+                    'resistance' : [(facet_lookup['x_max'], Constant((resistance,0)))] }
+    else :
+        bcs_fluid = {'velocity': [(facet_lookup['y_min'],vf_bottom),
+                                (facet_lookup['y_max'], Constant((0,0))),
+                                (facet_lookup['x_max'], Constant((0,0)))], # I would like only normal flow to be zero 
+                    'traction': [],  
+                    'pressure': [(facet_lookup['x_min'], Constant(0))],
+                    'resistance' : [] }     
+
+
+    if lateral_bc=='free' :
+        bcs_tracer = {'concentration': [(facet_lookup['x_max'], Constant(0)),
+                                        (facet_lookup['x_min'], Constant(0))],
+                    'flux': [(facet_lookup['y_max'], Constant((0, 0))),
+                            (facet_lookup['y_min'], Constant((0, 0)))]}
+    else :
+        bcs_tracer = {'concentration': [(facet_lookup['x_min'], Constant(0))],
+                    'flux': [(facet_lookup['x_max'], Constant(0)),
+                            (facet_lookup['y_max'], Constant(0)),
+                            (facet_lookup['y_min'], Constant(0))]}
 
 
 
 
 
+    bcs_ale = {'dirichlet': [(facet_lookup['y_min'], uale_bottom),
+                            (facet_lookup['y_max'], Constant((0, 0)))],
+               'neumann': [(facet_lookup['x_min'], Constant((0, 0))),
+                        (facet_lookup['x_max'], Constant((0, 0)))]}
 
 
-    # Initialisation : 2 possibilities
-    # 1/ Initialise with zero fields
+
+
+    # We collect the time dependent BC for update
+    driving_expressions = (uale_bottom,vf_bottom)
+
+    # Initialisation : 
+    logging.info(title1("Initialisation"))
+    logging.info("\n * Fluid")
+    logging.info("Velocity : zero field")
+    logging.info("Pressure : zero field")
     uf_n = project(Constant((0, 0)), Wf.sub(0).collapse())
     pf_n =  project(Constant(0), Wf.sub(1).collapse())
 
+    logging.info("\n * Tracer")
+    logging.info("Concentration : Gaussian profile")
+    logging.info("                Centered at mid length")
+    logging.info("                STD parameter = %e"%sigma_gauss)
 
 
+    c_0 = Expression('exp(-a*pow(x[0]-b, 2)) ', degree=1, a=1/2/sigma_gauss**2, b=L/2)
+    c_n =  project(c_0,Ct)
 
     # Save initial state
     uf_n.rename("uf", "tmp")
     pf_n.rename("pf", "tmp")
-
+    c_n.rename("c", "tmp")
     uf_out << (uf_n, 0)
     pf_out << (pf_n, 0)
+    c_out << (c_n, 0)
+
+    Rvn=Rv+functionU.subs(tn, 0)
+    slice_line = line([0,(Rpvs+Rvn)/2],[L,(Rpvs+Rvn)/2], 100)
+    values = line_sample(slice_line, pf_n) 
+
+    row=[0]+list(values)
+    csv_p.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
+
+
+
+    ############# RUN ############3
+
+    logging.info(title1("Run"))
 
     # Time loop
     time = 0.
     timestep=0
 
-    erroru=[]
-    errorp=[]
+    # Here I dont know if there will be several dt for advdiff and fluid solver
     while time < tfinal:
-        time += fluid_parameters['dt']
-        timestep+=1
+
+        # Update boundary conditions
+        for expr in driving_expressions:
+            hasattr(expr, 'tn') and setattr(expr, 'tn', time)
+            hasattr(expr, 'tnp1') and setattr(expr, 'tnp1', time+dt)
+
+        # Solve ALE and move mesh 
+        eta_f = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale,
+                      parameters=ale_parameters)
+        ALE.move(mesh_f, eta_f)
 
         # Solve fluid problem
-        uf_, pf_ = solve_fluid(Wf, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_fluid,
+        uf_, pf_ = solve_fluid(Wf, f=Constant((0, 0)), u_n=uf_n, p_n=pf_n, bdries=fluid_bdries, bcs=bcs_fluid,
                             parameters=fluid_parameters)
+
+
+        # Solve tracer problem
+        c_ = solve_adv_diff(Ct, velocity=uf_, f=Constant(0), phi_0=c_n,
+                                  bdries=fluid_bdries, bcs=bcs_tracer, parameters=tracer_parameters)
 
         # Update current solution
         uf_n.assign(uf_)
         pf_n.assign(pf_)
+        c_n.assign(c_)
 
-        
+        #Update time
+        time += dt
+        timestep+=1
+
         # Save output
         if(timestep % int(toutput/dt) == 0):
 
+            logging.info("save output time %e s"%time)
+            logging.info("number of time steps %i"%timestep)
+
+            # may report Courant number or other important values that indicate how is doing the run
+
             uf_.rename("uf", "tmp")
             pf_.rename("pf", "tmp")
-
+            c_.rename("c", "tmp")
             uf_out << (uf_, time)
             pf_out << (pf_, time)
-
-    #with open('./output/'+outputfolder+'/erroru.txt', 'a') as csv:
-    #    row=[N]+erroru
-    #    csv.write(('%i'+', %e'*len(erroru)+'\n')%tuple(row))
+            c_out << (c_, time)
 
 
+            # Get the 1 D profiles at umax
+            Rvn=Rv+functionU.subs(tn, time)
+            slice_line = line([0,(Rpvs+Rv)/2],[L,(Rpvs+Rv)/2], 100)
+            values = line_sample(slice_line, pf_) 
 
-    #Necessary ?
-    #   for i in logging._handlers.copy():
-    #       log.removeHandler(i)
-    #       i.flush()
-    #       i.close()
+            row=[time]+list(values)
+            csv_p.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
+
+
 
 
 if __name__ == '__main__':
@@ -398,7 +574,7 @@ if __name__ == '__main__':
 
     my_parser.add_argument('-dt','--time_step',
                         type=float,
-                        default=1e-4,
+                        default=1e-3,
                         help='time step')
 
     my_parser.add_argument('-mu','--viscosity',
@@ -436,7 +612,15 @@ if __name__ == '__main__':
                         default=2e-8,
                         help='Diffusion coefficient of the tracer')
 
+    my_parser.add_argument('-s','--sigma',
+                        type=float,
+                        default=1e-4,
+                        help='STD gaussian init for concentration')
+
+
+
     args = my_parser.parse_args()
+
 
     # Execute the PVS simulation
 
