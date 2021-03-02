@@ -32,9 +32,8 @@ def Div(u):
 
 
 strain = lambda u, mu: 2*mu*sym(Grad(u))
-sigma = lambda u, p, mu: strain(u, mu) - as_matrix(((p, Constant(0), Constant(0)),
-                                                    (0, Constant(0), Constant(0)),
-                                                    (Constant(0), Constant(0), Constant(0))))
+null = Constant(0)
+sigma = lambda u, p, mu: strain(u, mu) - p*Identity(3)
 
 
 def solve_fluid(W, f, bdries, bcs, parameters):
@@ -153,6 +152,15 @@ if __name__ == '__main__':
         u_true = as_vector((-delta_P/L/4/mu*(ln(r/rOut)/ln(rOut/rIn)*(rOut**2 - rIn**2) + (rOut**2 - r**2)),
                             Constant(0)*p_true))
 
+        foo = -Div(sigma(u_true, p_true, material_parameters['mu'])) + as_vector((forcing[0],
+                                                                                  forcing[1],
+                                                                                  0))
+        bar = -Div(strain(u_true, material_parameters['mu']))
+
+        for i in range(3):
+            print(assemble(inner(foo[i], foo[i])*dx), '<<<', i)
+            print(assemble(inner(bar[i], bar[i])*dx), '<<<<', i)            
+
         bcs = {'velocity': [(3, Constant((0, 0))), (4, Constant((0, 0)))],
                # 'pressure': [(1, Constant(0)), (2, Constant(-delta_P))],
                'traction': [(1, Constant((0, 0))), (2, Constant((-delta_P, 0)))]
@@ -184,8 +192,8 @@ if __name__ == '__main__':
     File('eu.pvd') << eu
 
     File('ph.pvd') << ph
-    # p = interpolate(p_exact, ph.function_space())
-    # File('p.pvd') << p
-    # ep = ph
-    # ep.vector().axpy(-1, p.vector())
-    # File('ep.pvd') << ep
+    p = project(p_true, ph.function_space())
+    File('p.pvd') << p
+    ep = ph
+    ep.vector().axpy(-1, p.vector())
+    File('ep.pvd') << ep
