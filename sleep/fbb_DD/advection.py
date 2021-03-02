@@ -1,5 +1,7 @@
+import sleep.fbb_DD.cylindrical as cyl
 from dolfin import *
 from functools import reduce
+import numpy as np
 import itertools
 import operator
 import sympy as sp
@@ -15,9 +17,115 @@ import ulfy  # https://github.com/MiroK/ulfy
 #
 # is solved on FE space W
 
+def solve_adv_diff_cyl(W, velocity, f, phi_0, bdries, bcs, parameters):
+    '''Return concentration field'''
+    info('Solving advection-diffusion for %d unknowns' % W.dim())
+    assert W.ufl_element().family() == 'Lagrange'
+    mesh = W.mesh()
+    assert mesh.geometry().dim() == 2
+    assert velocity.ufl_shape == (2, )
+    # Let's see about boundary conditions - they need to be specified on
+    # every boundary.
+    assert all(k in ('concentration', 'flux') for k in bcs)
+    # The tags must be found in bdries
+    dirichlet_bcs = bcs.get('concentration', ())  
+    neumann_bcs = bcs.get('flux', ())
+    # Tuple of pairs (tag, boundary value) is expected
+    dirichlet_tags = set(item[0] for item in dirichlet_bcs)
+    neumann_tags = set(item[0] for item in neumann_bcs)
+
+    tags = (dirichlet_tags, neumann_tags)
+    # Boundary conditions must be on distinct domains
+    for this, that in itertools.combinations(tags, 2):
+        if this and that: assert not this & that
+
+    # With convention that 0 bdries are inside all the exterior bdries must
+    # be given conditions in bcs
+    needed = set(bdries.array()) - set((0, ))
+    assert needed == reduce(operator.or_, tags)
+
+    # Collect bc values for possible temporal update in the integration
+    bdry_expressions = sum(([item[1] for item in bc]
+                            for bc in (dirichlet_bcs, neumann_bcs)),
+                           [])
+    
+    phi, psi = TrialFunction(W), TestFunction(W)
+    assert psi.ufl_shape == (), psi.ufl_shape
+
+    kappa = Constant(parameters['kappa'])
+    dt = Constant(parameters['dt'])
+
+    # Extend velocity to 3d as GradAxisym(scalar) is 3-vector
+    velocity = as_vector((velocity[0],
+                          velocity[1],
+                          Constant(0)))
+    # ... however, we are still in 2d
+    z, r = SpatialCoordinate(mesh)
+
+    phi_0 = interpolate(phi_0, W)
+    # Usual backward Euler
+    system = (inner((phi - phi_0)/dt, psi)*r*dx + dot(velocity, cyl.GradAxisym(phi))*psi*r*dx +
+              kappa*inner(cyl.GradAxisym(phi), cyl.GradAxisym(psi))*r*dx - inner(f, psi)*r*dx)
+    
+    # SUPG stabilization
+    if parameters.get('supg', False):
+        info(' Adding SUPG stabilization')
+        h = CellDiameter(mesh)
+
+        mag = sqrt(inner(velocity, velocity))
+        # See https://www.hindawi.com/journals/jam/2018/4259634/ for stab.
+        stab = 1/(4*kappa/h/h + 2*mag/h)
+
+        # Test the residuum againt         
+        system += stab*inner(((1/dt)*(phi - phi_0) - kappa*div(cyl.GradAxisym(phi)) + dot(velocity, cyl.GradAxisym(phi))) - f,
+                             dot(velocity, cyl.GradAxisym(psi)))*r*dx(degree=10)
+
+    # Handle natural bcs
+    n = FacetNormal(mesh)
+    ds = Measure('ds', domain=mesh, subdomain_data=bdries)
+    for tag, value in neumann_bcs:
+        system += -inner(value, psi)*r*ds(tag)
+
+    # velocity bcs go onto the matrix
+    Q = FunctionSpace(mesh, 'DG', 0)
+    q = TestFunction(Q)
+    for tag in dirichlet_tags:
+        v_n = assemble(inner(q, dot(velocity, n))*ds(tag))
+        if np.any(v_n.get_local() > 0):
+            print('Dirichlet bcs on outflow?', v_n.max(), tag)
+    
+    bcs_D = [DirichletBC(W, value, bdries, tag) for tag, value in dirichlet_bcs]
+
+    a, L = lhs(system), rhs(system)
+    # Discrete problem
+    assembler = SystemAssembler(a, L, bcs_D)
+
+    A, b = PETScMatrix(), PETScVector()
+    # Assemble once and setup solver for it
+    assembler.assemble(A)
+    solver = LUSolver(A, 'mumps')
+
+    # Temporal integration loop
+    T0 = parameters['T0']
+    for k in range(parameters['nsteps']):
+        # Update source if possible
+        for foo in bdry_expressions + [f]:
+            hasattr(foo, 't') and setattr(foo, 't', T0)
+            hasattr(foo, 'time') and setattr(foo, 'time', T0)
+
+        assembler.assemble(b)
+        solver.solve(phi_0.vector(), b)
+        k % 100 == 0 and info('  Adv-Diff at step (%d, %g) |phi_h|=%g' % (k, T0, phi_0.vector().norm('l2')))    
+
+        T0 += dt(0)
+        
+    return phi_0, T0
+
+
 def solve_adv_diff(W, velocity, f, phi_0, bdries, bcs, parameters):
     '''Return concentration field'''
     info('Solving advection-diffusion for %d unknowns' % W.dim())
+    assert W.ufl_element().family() == 'Lagrange'
     mesh = W.mesh()
     assert mesh.geometry().dim() == 2
     assert velocity.ufl_shape == (2, )
@@ -64,6 +172,7 @@ def solve_adv_diff(W, velocity, f, phi_0, bdries, bcs, parameters):
         h = CellDiameter(mesh)
 
         mag = sqrt(inner(velocity, velocity))
+        # See https://www.hindawi.com/journals/jam/2018/4259634/ for stab.
         stab = 1/(4*kappa/h/h + 2*mag/h)
 
         # Test the residuum againt         
@@ -78,6 +187,13 @@ def solve_adv_diff(W, velocity, f, phi_0, bdries, bcs, parameters):
         system += -inner(value, psi)*ds(tag)
 
     # velocity bcs go onto the matrix
+    Q = FunctionSpace(mesh, 'DG', 0)
+    q = TestFunction(Q)
+    for tag in dirichlet_tags:
+        v_n = assemble(inner(q, dot(velocity, n))*ds(tag))
+        if np.any(v_n.get_local() > 0):
+            print('Dirichlet bcs on outflow?', v_n.max(), tag)
+    
     bcs_D = [DirichletBC(W, value, bdries, tag) for tag, value in dirichlet_bcs]
 
     a, L = lhs(system), rhs(system)
@@ -165,43 +281,44 @@ if __name__ == '__main__':
     # Taylor-Hood
     Welm = FiniteElement('Lagrange', triangle, 1)
 
-    dt = 1E-3
+    dt = 1E-2
     parameters = {'kappa': Constant(kappa_value),    
                   'dt': dt,
                   'nsteps': int(1E-1/dt),
                   'T0': 0.}
         
-    # # Spatial convergences
-    # history = []
-    # for n in (4, 8, 16, 32, 64):
-    #     # Reset time
-    #     for thing in (phi_exact, velocity, forcing):
-    #         hasattr(thing, 'time') and setattr(thing, 'time', parameters['T0'])
-    #     phi_0 = phi_exact
+    # Spatial convergences
+    history = []
+    for n in (4, 8, 16, 32, 64):
+        # Reset time
+        for thing in (phi_exact, velocity, forcing):
+            hasattr(thing, 'time') and setattr(thing, 'time', parameters['T0'])
+        phi_0 = phi_exact
         
-    #     mesh = UnitSquareMesh(n, n)
-    #     # Setup similar to coupled problem ...
-    #     bdries = MeshFunction('size_t', mesh, mesh.topology().dim()-1, 0)
-    #     CompiledSubDomain('near(x[0], 0)').mark(bdries, 1)
-    #     CompiledSubDomain('near(x[0], 1)').mark(bdries, 2)
-    #     CompiledSubDomain('near(x[1], 0)').mark(bdries, 3)
-    #     CompiledSubDomain('near(x[1], 1)').mark(bdries, 4)
+        mesh = UnitSquareMesh(n, n)
+        # Setup similar to coupled problem ...
+        bdries = MeshFunction('size_t', mesh, mesh.topology().dim()-1, 0)
+        CompiledSubDomain('near(x[0], 0)').mark(bdries, 1)
+        CompiledSubDomain('near(x[0], 1)').mark(bdries, 2)
+        CompiledSubDomain('near(x[1], 0)').mark(bdries, 3)
+        CompiledSubDomain('near(x[1], 1)').mark(bdries, 4)
 
-    #     bcs = {'concentration': [], #[(t, phi_exact) for t in (1, )],
-    #            'flux': [(t, fluxes[t]) for t in (1, 2, 3, 4)]}
+        bcs = {'concentration': [], #[(t, phi_exact) for t in (1, )],
+               'flux': [(t, fluxes[t]) for t in (1, 2, 3, 4)]}
 
-    #     W = FunctionSpace(mesh, Welm)
-    #     phi_h, T = solve_adv_diff(W, velocity=velocity, f=forcing, phi_0=phi_0,
-    #                               bdries=bdries, bcs=bcs, parameters=parameters)
-    #     # Errors
-    #     print(phi_exact.time, T)
-    #     phi_exact.time = T
-    #     e = errornorm(phi_exact, phi_h, 'H1', degree_rise=2)
+        W = FunctionSpace(mesh, Welm)
+        phi_h, T = solve_adv_diff_cyl(W, velocity=velocity, f=forcing, phi_0=phi_0,
+                                      bdries=bdries, bcs=bcs, parameters=parameters)
+        # Errors
+        print(phi_exact.time, T)
+        phi_exact.time = T
+        e = errornorm(phi_exact, phi_h, 'H1', degree_rise=2)
 
-    #     print('|c-ch|_1', e)
-    #     history.append((mesh.hmin(), e))
-    # print(history)
+        print('|c-ch|_1', e)
+        history.append((mesh.hmin(), e))
+    print(history)
 
+    # Temporal cvrg
     n = 128
     mesh = UnitSquareMesh(n, n)
     # Setup similar to coupled problem ...
@@ -238,12 +355,10 @@ if __name__ == '__main__':
         phi_exact.time = T
         e = errornorm(phi_exact, phi_h, 'H1', degree_rise=2)
 
-        File('ph.pvd') << phi_h
-        phi_h.vector().axpy(-1, interpolate(phi_exact, phi_h.function_space()).vector())
-        File('p.pvd') << phi_h
+        # File('ph.pvd') << phi_h
+        # phi_h.vector().axpy(-1, interpolate(phi_exact, phi_h.function_space()).vector())
+        # File('p.pvd') << phi_h
 
         print('@ T = {} with dt = {} |c-ch|_1 = {}'.format(T, dt, e))
         history.append((dt, mesh.hmin(), e))
     print(history)
-    
-# Does this work for 1d heat equation?
