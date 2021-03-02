@@ -85,6 +85,8 @@ def PVS_simulation(args):
 
     #txt files
     csv_p=open(outputfolder+'profiles'+'/pressure.txt', 'w')
+    csv_u=open(outputfolder+'profiles'+'/velocity.txt', 'w')
+    csv_c=open(outputfolder+'profiles'+'/concentration.txt', 'w')
 
     #pvd files
     uf_out, pf_out= File(outputfolder+'fields'+'/uf.pvd'), File(outputfolder+'fields'+'/pf.pvd')
@@ -436,12 +438,20 @@ def PVS_simulation(args):
     pf_out << (pf_n, 0)
     c_out << (c_n, 0)
 
-    Rvn=Rv+functionU.subs(tn, 0)
-    slice_line = line([0,(Rpvs+Rvn)/2],[L,(Rpvs+Rvn)/2], 100)
-    values = line_sample(slice_line, pf_n) 
+    files=[csv_p,csv_u,csv_c]
+    fields=[pf_n,uf_n.sub(0),c_n]
+    
+    slice_line = line([0,(Rpvs+Rv)/2],[L,(Rpvs+Rv)/2], 100)
 
-    row=[0]+list(values)
-    csv_p.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
+    for csv_file,field in zip(files,fields) :
+        #print the x scale
+        values=np.linspace(0,L,100)
+        row=[0]+list(values)
+        csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
+        #print the initial 1D slice
+        values = line_sample(slice_line, field) 
+        row=[0]+list(values)
+        csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
 
 
 
@@ -500,13 +510,17 @@ def PVS_simulation(args):
             c_out << (c_, time)
 
 
-            # Get the 1 D profiles at umax
+            # Get the 1 D profiles at umax (to be changed in cyl coordinate)
             Rvn=Rv+functionU.subs(tn, time)
-            slice_line = line([0,(Rpvs+Rv)/2],[L,(Rpvs+Rv)/2], 100)
-            values = line_sample(slice_line, pf_) 
+            slice_line = line([0,(Rpvs+Rvn)/2],[L,(Rpvs+Rvn)/2], 100)
 
-            row=[time]+list(values)
-            csv_p.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
+            files=[csv_p,csv_u,csv_c]
+            fields=[pf_n,uf_n.sub(0),c_n]
+
+            for csv_file,field in zip(files,fields) :
+                values = line_sample(slice_line, field) 
+                row=[time]+list(values)
+                csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
 
 
 
