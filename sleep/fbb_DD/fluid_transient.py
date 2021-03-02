@@ -18,6 +18,103 @@ import ulfy  # https://github.com/MiroK/ulfy
 #
 # is solved on FE space W
 
+
+def solve_fluid_cyl(W, u_0, f, bdries, bcs, parameters):
+    '''Return velocity and pressure'''
+    info('Solving Stokes for %d unknowns' % W.dim())
+    mesh = W.mesh()
+    assert mesh.geometry().dim() == 2
+    # Let's see about boundary conditions - they need to be specified on
+    # every boundary.
+    assert all(k in ('velocity', 'traction', 'pressure') for k in bcs)
+    # The tags must be found in bdries
+    velocity_bcs = bcs.get('velocity', ())  
+    traction_bcs = bcs.get('traction', ())
+    pressure_bcs = bcs.get('pressure', ())
+    # Tuple of pairs (tag, boundary value) is expected
+    velocity_tags = set(item[0] for item in velocity_bcs)
+    traction_tags = set(item[0] for item in traction_bcs)
+    pressure_tags = set(item[0] for item in pressure_bcs)
+
+    tags = (velocity_tags, traction_tags, pressure_tags)
+    # Boundary conditions must be on distinct domains
+    for this, that in itertools.combinations(tags, 2):
+        if this and that: assert not this & that
+
+    # With convention that 0 bdries are inside all the exterior bdries must
+    # be given conditions in bcs
+    needed = set(bdries.array()) - set((0, ))
+    assert needed == reduce(operator.or_, tags)
+
+    # Things, which we might want to update in the time loop
+    bdry_expressions = sum(([item[1] for item in bc]
+                            for bc in (velocity_bcs, traction_bcs, pressure_tags)),
+                           [])
+
+    u, p = TrialFunctions(W)
+    v, q = TestFunctions(W)
+
+    assert len(u.ufl_shape) == 1 and len(p.ufl_shape) == 0
+
+    wh_0 = Function(W)
+    assign(wh_0.sub(0), interpolate(u_0, W.sub(0).collapse()))
+    
+    u_0, p_0 = split(wh_0)
+    # All but bc terms
+    mu = parameters['mu']
+    rho = parameters['rho']
+    dt = Constant(parameters['dt'])
+
+    z, r = SpatialCoordinate(mesh)
+    
+    system = (rho*inner((u - u_0)/dt, v)*r*dx +
+              inner(mu*cyl.GradAxisym(u), cyl.GradAxisym(v))*r*dx - inner(p, cyl.DivAxisym(v))*r*dx
+              -inner(q, cyl.DivAxisym(u))*r*dx - rho*inner(f, v)*r*dx)
+
+    # Handle natural bcs
+    n = FacetNormal(mesh)
+    ds = Measure('ds', domain=mesh, subdomain_data=bdries)
+    
+    for tag, value in traction_bcs:
+        system += -inner(value, v)*r*ds(tag)
+
+    for tag, value in pressure_bcs:
+        # impose normal component of normal traction do be equal to the imposed pressure
+        system += -inner(-value, dot(v, n))*r*ds(tag) # note the minus sign before the pressure term in the stress
+        if parameters.get('add_cyl.GradAxisym_un_pressure_bdry', False):
+            system += -inner(dot(cyl.GradAxisym(u), n), v)*r*ds(tag)
+
+    # Velocity bcs go onto the matrix
+    bcs_D = [DirichletBC(W.sub(0), value, bdries, tag) for tag, value in velocity_bcs]
+
+    a, L = lhs(system), rhs(system)
+    # Discrete problem
+    assembler = SystemAssembler(a, L, bcs_D)
+
+    A, b = PETScMatrix(), PETScVector()
+    # Assemble once and setup solver for it
+    assembler.assemble(A)
+    solver = LUSolver(A, 'mumps')
+
+    # Temporal integration loop
+    T0 = parameters['T0']
+    for k in range(parameters['nsteps']):
+        # Update source if possible
+        for foo in bdry_expressions + [f]:
+            hasattr(foo, 't') and setattr(foo, 't', T0)
+            hasattr(foo, 'time') and setattr(foo, 'time', T0)
+
+        assembler.assemble(b)
+        solver.solve(wh_0.vector(), b)
+        k % 100 == 0 and info('  Stokes at step (%d, %g) |wh|=%g' % (k, T0, wh_0.vector().norm('l2')))    
+
+        T0 += dt(0)        
+
+    u_0, p_0 = wh_0.split(deepcopy='True')
+        
+    return u_0, p_0, T0
+
+
 def solve_fluid(W, u_0, f, bdries, bcs, parameters):
     '''Return velocity and pressure'''
     info('Solving Stokes for %d unknowns' % W.dim())
