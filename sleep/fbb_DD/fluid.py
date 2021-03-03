@@ -18,26 +18,24 @@ import ulfy  # https://github.com/MiroK/ulfy
 #
 # is solved on FE space W
 
-def solve_fluid(W, f,u_n, p_n, bdries, bcs, parameters):
+def solve_fluid(W, u_0, f,  bdries, bcs, parameters):
     '''Return velocity and pressure'''
     info('Solving Stokes for %d unknowns' % W.dim())
     mesh = W.mesh()
     assert mesh.geometry().dim() == 2
     # Let's see about boundary conditions - they need to be specified on
     # every boundary.
-    assert all(k in ('velocity', 'traction', 'pressure','resistance') for k in bcs)
+    assert all(k in ('velocity', 'traction', 'pressure') for k in bcs)
     # The tags must be found in bdries
     velocity_bcs = bcs.get('velocity', ())  
     traction_bcs = bcs.get('traction', ())
     pressure_bcs = bcs.get('pressure', ())
-    resistance_bcs=bcs.get('resistance', ())
     # Tuple of pairs (tag, boundary value) is expected
     velocity_tags = set(item[0] for item in velocity_bcs)
     traction_tags = set(item[0] for item in traction_bcs)
     pressure_tags = set(item[0] for item in pressure_bcs)
-    resistance_tags = set(item[0] for item in resistance_bcs)
 
-    tags = (velocity_tags, traction_tags, pressure_tags, resistance_tags)
+    tags = (velocity_tags, traction_tags, pressure_tags)
 
     # Boundary conditions must be on distinct domains
     for this, that in itertools.combinations(tags, 2):
@@ -51,10 +49,6 @@ def solve_fluid(W, f,u_n, p_n, bdries, bcs, parameters):
     u, p = TrialFunctions(W)
     v, q = TestFunctions(W)
 
-    # Previous solutions
-    V, Q = W.sub(0).collapse(), W.sub(1).collapse()
-    u_n = interpolate(u_n, V)    
-    p_n = interpolate(p_n, Q)
 
     assert len(u.ufl_shape) == 1 and len(p.ufl_shape) == 0
     # All but bc terms
@@ -78,16 +72,6 @@ def solve_fluid(W, f,u_n, p_n, bdries, bcs, parameters):
         system += -inner(-value, dot(v, n))*ds(tag) # note the minus sign before the pressure term in the stress
         # impose  dot(n, grad(u))=0
         system += inner(dot(grad(u), n), v)*ds(tag)
-
-    for tag,value in resistance_bcs:
-        R=value[0]
-        p0=value[1]
-        Q=assemble(dot(u_n, n)*ds(tag))
-        # Compute pressure to impose according to the flow at previous time step and resistance.
-        pvalue=Q*R+p0
-        system += -inner(-pvalue, dot(v, n))*ds(tag) # note the minus sign before the pressure term in the stress
-        # impose  dot(n, grad(u))=0
-        system += inner(dot(grad(u), n), v)*ds(tag)        
 
 
     # Velocity bcs go onto the matrix
@@ -162,7 +146,7 @@ def mms_stokes(mu_value):
             'stress_components': stress_components}
 
 
-def solve_fluid_cyl(W, f, bdries, bcs, parameters):
+def solve_fluid_cyl(W,u_0, f,  bdries, bcs, parameters):
     '''Return velocity and pressure'''
     info('Solving Stokes for %d unknowns' % W.dim())
     mesh = W.mesh()

@@ -6,9 +6,9 @@ import os
 
 import numpy as np
 
-from sleep.fbb_DD.advection import solve_adv_diff
-from sleep.fbb_DD.fluid import solve_fluid
-from sleep.fbb_DD.ale import solve_ale
+from sleep.fbb_DD.advection import solve_adv_diff as solve_adv_diff
+from sleep.fbb_DD.fluid import solve_fluid_cyl as solve_fluid
+from sleep.fbb_DD.ale import solve_ale_cyl as solve_ale
 from sleep.utils import EmbeddedMesh
 from sleep.mesh import load_mesh2d
 from dolfin import *
@@ -20,9 +20,9 @@ from dolfin import *
 #logging.error
 #logging.critical
 
-
-#todo : add resistance BC ---> FFC compile again during the run. Is it normal? How to remove the info from the log ?
-#todo : write 1D profiles for u p c in a file
+#todo : add dt and n steps management
+#todo : check the BC resistance ---> FFC compile again during the run. Is it normal? How to remove the info from the log ?
+#todo : change location of umax for cylindrical
 
 #todo : external script to postprocess u p c profiles : figure , compute coef dispertion
 
@@ -163,12 +163,14 @@ def PVS_simulation(args):
     logging.info('output period : %e s'%toutput)
     logging.info('time step : %e s'%dt)
 
-    # approximate CFL for fluid solver
-    Uapprox=500e-4 #upper limit for extected max velocity
-    CFL_dt=0.25*DY/Uapprox
-    if  CFL_dt < dt :
-        logging.warning('The specified time step of %.2e s does not fullfil the fluid CFL condition. New fluid time step : %.2e s'%(dt, CFL_dt))
-    dt_fluid=min(dt,CFL_dt)
+    # approximate CFL for fluid solver : need to compute max velocity depending on the wall displacement... 
+    # maybe just add a warning in computation with actual velocity
+    #Uapprox=500e-4 #upper limit for extected max velocity
+    #CFL_dt=0.25*DY/Uapprox
+    #if  CFL_dt < dt :
+    #    logging.warning('The specified time step of %.2e s does not fullfil the fluid CFL condition. New fluid time step : %.2e s'%(dt, CFL_dt))
+    #dt_fluid=min(dt,CFL_dt)
+    dt_fluid=dt
 
     # approximate CFL for tracer solver
     dt_advdiff=dt
@@ -365,22 +367,25 @@ def PVS_simulation(args):
                                 (facet_lookup['y_max'], Constant((0,0)))],
                     'traction': [],  
                     'pressure': [(facet_lookup['x_min'], Constant(0)),
-                                (facet_lookup['x_max'], Constant(0))],
-                    'resistance':[]}
+                                (facet_lookup['x_max'], Constant(0))]}
 
     elif lateral_bc=='resistance' :
+
+        Rpressure=Expression('R*Q+p0', R = resistance, Q=0, p0=0) #
+  
+        # Compute pressure to impose according to the flow at previous time step and resistance.
+
         bcs_fluid = {'velocity': [(facet_lookup['y_min'],vf_bottom),
                                 (facet_lookup['y_max'], Constant((0,0)))],
                     'traction': [],  
-                    'pressure': [(facet_lookup['x_min'], Constant(0))],
-                    'resistance' : [(facet_lookup['x_max'], Constant((resistance,0)))] }
+                    'pressure': [(facet_lookup['x_min'], Constant(0)),
+                                 (facet_lookup['x_max'], Rpressure)]}
     else :
         bcs_fluid = {'velocity': [(facet_lookup['y_min'],vf_bottom),
                                 (facet_lookup['y_max'], Constant((0,0))),
                                 (facet_lookup['x_max'], Constant((0,0)))], # I would like only normal flow to be zero 
                     'traction': [],  
-                    'pressure': [(facet_lookup['x_min'], Constant(0))],
-                    'resistance' : [] }     
+                    'pressure': [(facet_lookup['x_min'], Constant(0))]}     
 
 
     if lateral_bc=='free' :
@@ -464,13 +469,18 @@ def PVS_simulation(args):
             hasattr(expr, 'tn') and setattr(expr, 'tn', time)
             hasattr(expr, 'tnp1') and setattr(expr, 'tnp1', time+dt)
 
+        if lateral_bc=='resistance' :
+            Q=assemble(dot(u_n, n)*ds(facet_lookup['x_max']))
+            setattr(Rpressure, 'Q', Q)
+
+
         # Solve ALE and move mesh 
         eta_f = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale,
                       parameters=ale_parameters)
         ALE.move(mesh_f, eta_f)
 
         # Solve fluid problem
-        uf_, pf_ = solve_fluid(Wf, f=Constant((0, 0)), u_n=uf_n, p_n=pf_n, bdries=fluid_bdries, bcs=bcs_fluid,
+        uf_, pf_ = solve_fluid(Wf, u_0=uf_n,  f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_fluid,
                             parameters=fluid_parameters)
 
 
