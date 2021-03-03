@@ -90,7 +90,10 @@ def solve_adv_diff_cyl(W, velocity, f, phi_0, bdries, bcs, parameters):
     Q = FunctionSpace(mesh, 'DG', 0)
     q = TestFunction(Q)
     for tag in dirichlet_tags:
-        v_n = assemble(inner(q, dot(velocity, n))*ds(tag))
+        #extend to 3D
+        n_ = as_vector((n[0], n[1], Constant(0)))
+        q_ = as_vector((q[0], q[1], Constant(0)*q[0]))
+        v_n = assemble(inner(q_, dot(velocity, n_))*ds(tag))
         if np.any(v_n.get_local() > 0):
             print('Dirichlet bcs on outflow?', v_n.max(), tag)
     
