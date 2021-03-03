@@ -18,10 +18,11 @@ import ulfy  # https://github.com/MiroK/ulfy
 # Elasticity:
 #  1) displacement - sets the entire displacement
 #  2) traction - sets sigma.n
+#  3) normal stress on surface - sets n.(sigma.n)
 #
 # Darcy
 # 1) pressure - sets pressure
-# 2) flux - constrols u.n
+# 2) flux - constrols u.n 
 #
 
 def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
@@ -36,15 +37,25 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
     needed = set(bdries.array()) - set((0, ))    
     # Validate elasticity bcs
     bcs_E = bcs['elasticity']
-    assert all(k in ('displacement', 'traction') for k in bcs_E)
+    assert all(k in ('displacement','displacement_x','displacement_y', 'traction') for k in bcs_E)
 
     displacement_bcs = bcs_E.get('displacement', ())  
     traction_bcs = bcs_E.get('traction', ())
+
+    #Add new BC
+    displacement_x_bcs = bcs_E.get('displacement_x', ())  
+    displacement_y_bcs = bcs_E.get('displacement_y', ())  
+
     # Tuple of pairs (tag, boundary value) is expected
     displacement_tags = set(item[0] for item in displacement_bcs)
     traction_tags = set(item[0] for item in traction_bcs)
 
-    tags = (displacement_tags, traction_tags)
+    #Add new BC
+    displacement_x_tags = set(item[0] for item in displacement_x_bcs)
+    displacement_y_tags = set(item[0] for item in displacement_y_bcs)
+
+
+    tags = (displacement_tags, traction_tags, displacement_x_tags, displacement_y_tags)
     for this, that in itertools.combinations(tags, 2):
         if this and that: assert not this & that
 
@@ -56,9 +67,13 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
 
     pressure_bcs = bcs_D.get('pressure', ())  
     flux_bcs = bcs_D.get('flux', ())
+
+
     # Tuple of pairs (tag, boundary value) is expected
     pressure_tags = set(item[0] for item in pressure_bcs)
     flux_tags = set(item[0] for item in flux_bcs)
+
+
 
     tags = (pressure_tags, flux_tags)
     for this, that in itertools.combinations(tags, 2):
@@ -66,10 +81,6 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
 
     assert needed == reduce(operator.or_, tags), (needed, reduce(operator.or_, tags))
 
-    # Collect bc values for possible temporal update in the integration
-    bdry_expressions = sum(([item[1] for item in bc]
-                            for bc in (displacement_bcs, traction_bcs, pressure_bcs, flux_bcs)),
-                           [])
 
     # FEM ---
     eta, u, p = TrialFunctions(W)
@@ -81,39 +92,77 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
     # For weak form also time step is needed
     dt = Constant(parameters['dt'])
 
-    # Previous solutions
+    # Previous solutions : 
     wh_0 = Function(W)
-    assign(wh_0.sub(0), interpolate(eta_0, W.sub(0).collapse()))    
+    assign(wh_0.sub(0), interpolate(eta_0, W.sub(0).collapse())) 
+   # assign(wh_0.sub(1), interpolate(u_0, W.sub(1).collapse()))  
     assign(wh_0.sub(2), interpolate(p_0, W.sub(2).collapse()))
     eta_0, u_0, p_0 = split(wh_0)
 
+
     # Elasticity
-    a = (2*mu*inner(sym(grad(eta)), sym(grad(phi)))*dx +
-         inner(lmbda*div(eta), div(phi))*dx -
-         inner(p, alpha*div(phi))*dx)
+    a =   inner(2*mu*sym(grad(eta)), sym(grad(phi)))*dx 
+    a +=  inner(lmbda*div(eta), div(phi))*dx 
+    a += -alpha*inner(p, div(phi))*dx
 
     L = inner(f1, phi)*dx
               
     # Darcy
-    a += (1/kappa)*inner(u, v)*dx - inner(p, div(v))*dx
+    a +=   inner((1/kappa)*u, v)*dx 
+    a += - inner(p, div(v))*dx
          
     # Mass conservation with backward Euler
-    a += inner(s0*p, q)*dx + inner(alpha*div(eta), q)*dx + dt*inner(div(u), q)*dx
-    L += dt*inner(f2, q)*dx + inner(s0*p_0, q)*dx + inner(alpha*div(eta_0), q)*dx         
+    a += inner(s0*p, q)*dx
+    a += inner(alpha*div(eta),q)*dx
+    a += dt*inner(div(u), q)*dx #
+
+    L += dt*inner(f2, q)*dx 
+    L += inner(s0*p_0, q)*dx 
+    L += inner(alpha*div(eta_0), q)*dx          
+
+
+
+
+    ### Set boundary conditions
+    # initialise empty Dirichlet list
+    bcs_strong =[]
 
     # Handle natural bcs
     n = FacetNormal(mesh)
     ds = Measure('ds', domain=mesh, subdomain_data=bdries)
-    # For elasticity
+
+
+    # Traction condition 
     for tag, value in traction_bcs:
         L += inner(value, phi)*ds(tag)
-    # For Darcy
+
+
+    # Flow boundary conditions
+    # Strongly
+    bcs_strong.extend([DirichletBC(W.sub(1),value, bdries, tag) for tag, value in flux_bcs])
+    # todo : I would like a general way to impose normal flux.
+
+    
+
+    # Pressure boundary conditions
     for tag, value in pressure_bcs:
-        L += -inner(value, dot(v, n))*ds(tag)
-        
-    # Displacement bcs and flux bcs go on the system
-    bcs_strong = [DirichletBC(W.sub(0), value, bdries, tag) for tag, value in displacement_bcs]
-    bcs_strong.extend([DirichletBC(W.sub(1), value, bdries, tag) for tag, value in flux_bcs])
+        L += -inner(value, dot(v, n))*ds(tag)#-alpha*inner(value, dot(phi, n))*ds(tag)
+
+    
+    # Displacement 
+    # Impose displacement bcs 
+    bcs_strong.extend([DirichletBC(W.sub(0), value, bdries, tag) for tag, value in displacement_bcs])
+
+    # Displacement along x
+    bcs_strong.extend([DirichletBC(W.sub(0).sub(0), value, bdries, tag) for tag, value in displacement_x_bcs])
+    # Displacement along y 
+    bcs_strong.extend([DirichletBC(W.sub(0).sub(1), value, bdries, tag) for tag, value in displacement_y_bcs])
+    # todo : I would like a general way to impose normal displacement.
+
+
+
+
+
 
     # Discrete problem
     assembler = SystemAssembler(a, L, bcs_strong)
@@ -122,82 +171,14 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
     # Assemble once and setup solver for it
     assembler.assemble(A)
     solver = LUSolver(A, 'mumps')
+    
 
-    # Temporal integration loop
-    T0 = parameters['T0']
-    for k in range(parameters['nsteps']):
-        T0 += dt(0)
-        # Update source if possible
-        for foo in bdry_expressions + [f1, f2]:
-            hasattr(foo, 't') and setattr(foo, 't', T0)
-            hasattr(foo, 'time') and setattr(foo, 'time', T0)
-
-        assembler.assemble(b)
-        solver.solve(wh_0.vector(), b)
-        k % 10 == 0 and info('  Biot at step (%d, %g) |uh|=%g' % (k, T0, wh_0.vector().norm('l2')))    
+    assembler.assemble(b)
+    solver.solve(wh_0.vector(), b)
 
     eta_h, u_h, p_h = wh_0.split(deepcopy=True)
         
-    return eta_h, u_h, p_h, T0
-
-
-def mms_solid(parameters):
-    '''Method of manufactured solutions on [0, 1]^2'''
-    mesh = UnitSquareMesh(2, 2)  
-    V = VectorFunctionSpace(mesh, 'CG', 2)  # Displacement, Flux
-    Q = FunctionSpace(mesh, 'CG', 2)  # Pressure
-    # Coefficient space
-    S = FunctionSpace(mesh, 'DG', 0)
-
-    kappa, mu, lmbda, alpha, s0 = [Function(S) for _ in range(5)]
-
-    eta = Function(V)  # Displacement
-    p = Function(Q)  # Pressure
-    u = -kappa*grad(p)  # Define flux
-
-    sigma_p = lambda eta, p: 2*mu*sym(grad(eta)) + lmbda*div(eta)*Identity(len(eta)) - alpha*p*Identity(len(eta))
-    
-    f1 = -div(sigma_p(eta, p))
-    
-    # NOTE: we do not have temporal derivative but if we assume eta and p
-    # have foo(x, y)*bar(t) then in mass conservation we will have
-    # [s0*p + alpha*div(eta)]*dbar(t)
-    
-    # What we want to substitute
-    x, y, kappa_, mu_, lmbda_, alpha_, s0_ = sp.symbols('x y kappa mu lmbda alpha s0')
-    time_ = sp.Symbol('time')
-    # Expressions
-    eta_ = sp.Matrix([sp.sin(pi*(x + y)),
-                      sp.cos(pi*(x + y))])*sp.exp(1-time_)
-
-    p_ = sp.cos(pi*(x-y))*sp.exp(1-time_)
-    # - here is dbar(t)
-    f2 = -(s0*p + alpha*div(eta)) + div(u)
-
-    subs = {eta: eta_, p: p_,
-            kappa: kappa_, mu: mu_, lmbda: lmbda_, alpha: alpha_, s0: s0_}
-
-    as_expr = lambda t: ulfy.Expression(t, subs=subs, degree=4,
-                                        kappa=parameters['kappa'],
-                                        mu=parameters['mu'],
-                                        lmbda=parameters['lmbda'],
-                                        alpha=parameters['alpha'],
-                                        s0=parameters['s0'],
-                                        time=0.0)
-    
-    # Solution
-    eta_exact, u_exact, p_exact = map(as_expr, (eta, u, p))
-    # Forcing
-    f1, f2 = as_expr(f1), as_expr(f2)
-    #  4
-    # 1 2
-    #  3 so that
-    normals = [Constant((-1, 0)), Constant((1, 0)), Constant((0, -1)), Constant((0, 1))]
-    tractions = [as_expr(dot(sigma_p(eta, p), n)) for n in normals]
-
-    return {'solution': (eta_exact, u_exact, p_exact),
-            'force': (f1, f2),
-            'tractions': tractions}
+    return eta_h, u_h, p_h
            
 # --------------------------------------------------------------------
 

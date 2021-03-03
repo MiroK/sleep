@@ -1,4 +1,6 @@
+import sleep.fbb_DD.cylindrical as cyl
 from dolfin import *
+from functools import reduce
 import itertools
 import operator
 import sympy as sp
@@ -16,6 +18,61 @@ import ulfy  # https://github.com/MiroK/ulfy
 #
 # NOTE kappa here could be some function to further enhance/localize
 # mesh smoothing
+
+def solve_ale_cyl(V, f, bdries, bcs, parameters):
+    '''Return displacement'''
+    mesh = V.mesh()
+    info('Solving ALE for %d unknowns' % V.dim())
+    # Let's see about boundary conditions - they need to be specified on
+    # every boundary.
+    assert all(k in ('dirichlet', 'neumann') for k in bcs)
+    # The tags must be found in bdries
+    dirichlet_bcs = bcs.get('dirichlet', ())  
+    neumann_bcs = bcs.get('neumann', ())
+    # Tuple of pairs (tag, boundary value) is expected
+    dirichlet_tags = set(item[0] for item in dirichlet_bcs)
+    neumann_tags = set(item[0] for item in neumann_bcs)
+
+    tags = (dirichlet_tags, neumann_tags)
+    # Boundary conditions must be on distinct domains
+    for this, that in itertools.combinations(tags, 2):
+        if this and that: assert not this & that
+
+    # With convention that 0 bdries are inside all the exterior bdries must
+    # be given conditions in bcs
+    needed = set(bdries.array()) - set((0, ))
+    assert needed == reduce(operator.or_, tags)
+                 
+    u, v = TrialFunction(V), TestFunction(V)
+    assert len(u.ufl_shape) == 1
+
+    z, r = SpatialCoordinate(mesh)
+    # All but bc terms
+    kappa = parameters['kappa']
+    system = inner(kappa*cyl.GradAxisym(u), cyl.GradAxisym(v))*r*dx - inner(f, v)*r*dx
+    # Handle natural bcs
+    n = FacetNormal(mesh)
+    ds = Measure('ds', domain=mesh, subdomain_data=bdries)
+    
+    for tag, value in neumann_bcs:
+        system += -inner(value, v)*r*ds(tag)
+
+    # Dirichlet bcs go onto the matrix
+    bcs_D = [DirichletBC(V, value, bdries, tag) for tag, value in bcs['dirichlet']]
+
+    # Discrete problem
+    a, L = lhs(system), rhs(system)
+    A, b = assemble_system(a, L, bcs_D)
+
+    # NOTE: this uses direct solver, might be too slow but we know what
+    # to do then
+    uh = Function(V)
+    timer = Timer('ALE')
+    solve(A, uh.vector(), b)
+    info('  ALE done in %f secs |uh|=%g' % (timer.stop(), uh.vector().norm('l2')))
+
+    return uh
+
 
 def solve_ale(V, f, bdries, bcs, parameters):
     '''Return displacement'''
@@ -72,7 +129,7 @@ def solve_ale(V, f, bdries, bcs, parameters):
 
 def mms_ale(kappa_value):
     '''Method of manufactured solutions on [0, 1]^2'''
-    mesh = UnitSquareMesh(mpi_comm_self(), 2, 2)  # Dummy
+    mesh = UnitSquareMesh(2, 2)  # Dummy
     V = VectorFunctionSpace(mesh, 'CG', 2)
     # Coefficient space
     S = FunctionSpace(mesh, 'DG', 0)

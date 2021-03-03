@@ -1,4 +1,5 @@
 from dolfin import *
+from functools import reduce
 import itertools
 import operator
 import sympy as sp
@@ -114,7 +115,7 @@ def solve_solid(W, f1, f2, bdries, bcs, parameters):
 
 def mms_solid(parameters):
     '''Method of manufactured solutions on [0, 1]^2'''
-    mesh = UnitSquareMesh(mpi_comm_self(), 2, 2)  
+    mesh = UnitSquareMesh(2, 2)  
     V = VectorFunctionSpace(mesh, 'CG', 2)  # Displacement, Flux
     Q = FunctionSpace(mesh, 'CG', 2)  # Pressure
     # Coefficient space

@@ -27,22 +27,22 @@ def build_model(model, geometry_parameters):
     c = factory.addPoint(X, YF+YS1, 0)
     d = factory.addPoint(X, YF+YS1+YS2, 0)
 
-    fluid_lines = [factory.addLine(*p) for p in (B, A), (A, a), (a, b)]
+    fluid_lines = [factory.addLine(*p) for p in ((B, A), (A, a), (a, b))]
     named_lines = dict(zip(('F_left', 'F_bottom', 'F_right'), fluid_lines))
 
-    interface_lines = [factory.addLine(*p) for p in (b, B), (C, c)]
+    interface_lines = [factory.addLine(*p) for p in ((b, B), (C, c))]
     named_lines.update(dict(zip(('I_bottom', 'I_top'), interface_lines)))
 
     fluid_loop = factory.addCurveLoop(fluid_lines + [interface_lines[0]])
     fluid = factory.addPlaneSurface([fluid_loop])
 
-    solid1_lines = [factory.addLine(*p) for p in (B, C), (c, b)]
+    solid1_lines = [factory.addLine(*p) for p in ((B, C), (c, b))]
     named_lines.update(dict(zip(('S1_left', 'S1_right'), solid1_lines)))
     
     solid1_loop = factory.addCurveLoop(sum(zip(interface_lines, solid1_lines), ()))
     solid1 = factory.addPlaneSurface([solid1_loop])
 
-    solid2_lines = [factory.addLine(*p) for p in (c, d), (d, D), (D, C)]
+    solid2_lines = [factory.addLine(*p) for p in ((c, d), (d, D), (D, C))]
     named_lines.update(dict(zip(('S2_right', 'S2_top', 'S2_left'), solid2_lines)))
 
     solid2_loop = factory.addCurveLoop(solid2_lines + [interface_lines[1]])
@@ -128,27 +128,28 @@ if __name__ == '__main__':
 
     model = gmsh.model
 
-    geometry_parameters = {'X': 2, 'YF': 0.5, 'YS1': 0.25, 'YS2': 0.3}
+    # Normally L=500 um , YS1=1um, I set other values just for testing
+    geometry_parameters = {'X': 100e-4, 'YF': 20e-4, 'YS1': 10e-4, 'YS2': 99e-4}
     model, tags = build_model(model, geometry_parameters)
 
-    # Origin, width, inside, outside sizes
-    sizes = {'F1_bottom': (0-0.1, 0.2, 0.1, 0.2),
-             'I_bottom': (0+geometry_parameters['YF']-0.05, 0.1, 0.03, 0.3),
-             'I_top': (0+geometry_parameters['YF']+geometry_parameters['YS1']-0.05, 0.1, 0.03, 0.2),
-             'S2_top': (0+geometry_parameters['YF']+geometry_parameters['YS1']+geometry_parameters['YS2']-0.1, 0.2, 0.1, 0.4)
-    }
 
+    Number_cells_vertical_S1=3
+    # Origin, width, inside, outside sizes
+    sizes = {'I_bottom': (0+geometry_parameters['YF']-geometry_parameters['YF']/10, +geometry_parameters['YF']+geometry_parameters['YS1']/2, geometry_parameters['YS1']/Number_cells_vertical_S1,geometry_parameters['X']/10,geometry_parameters['YF']),
+             'I_top': (0+geometry_parameters['YF']+geometry_parameters['YS1']-geometry_parameters['YS1']/2, 0+geometry_parameters['YF']+geometry_parameters['YS1']+geometry_parameters['YS1'], geometry_parameters['YS1']/Number_cells_vertical_S1, geometry_parameters['X']/10,geometry_parameters['YS2'])
+    }
     field = model.mesh.field
     fid = 1
     boxes = []
-    for (y, w, Vin, Vout) in sizes.values():
+    for (ymin, ymax, Vin, Vout,t) in sizes.values():
          field.add('Box', fid)
          field.setNumber(fid, 'XMin', 0)
          field.setNumber(fid, 'XMax', 0+geometry_parameters['X'])
-         field.setNumber(fid, 'YMin', y)
-         field.setNumber(fid, 'YMax', y+w)
+         field.setNumber(fid, 'YMin', ymin)
+         field.setNumber(fid, 'YMax', ymax)
          field.setNumber(fid, 'VIn', Vin)
          field.setNumber(fid, 'VOut', Vout)
+         field.setNumber(fid, 'Thickness', t)
 
          boxes.append(fid)
          fid += 1

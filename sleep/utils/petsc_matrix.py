@@ -23,26 +23,26 @@ def petsc_serial_matrix(test_space, trial_space, nnz=None):
     generic R^n.
     '''
     mesh = test_space.mesh()
-    comm = mesh.mpi_comm().tompi4py()
+    comm = mesh.mpi_comm()
     assert comm.size == 1
     
     row_map = test_space.dofmap()
     col_map = trial_space.dofmap()
     
-    sizes = [[row_map.index_map().size(df.IndexMap.MapSize_OWNED),
-              row_map.index_map().size(df.IndexMap.MapSize_GLOBAL)],
-             [col_map.index_map().size(df.IndexMap.MapSize_OWNED),
-              col_map.index_map().size(df.IndexMap.MapSize_GLOBAL)]]
+    sizes = [[row_map.index_map().size(df.IndexMap.MapSize.OWNED),
+              row_map.index_map().size(df.IndexMap.MapSize.GLOBAL)],
+             [col_map.index_map().size(df.IndexMap.MapSize.OWNED),
+              col_map.index_map().size(df.IndexMap.MapSize.GLOBAL)]]
     
-    row_map = map(int, row_map.tabulate_local_to_global_dofs())
-    col_map = map(int, col_map.tabulate_local_to_global_dofs())
+    row_map = list(map(int, row_map.tabulate_local_to_global_dofs()))
+    col_map = list(map(int, col_map.tabulate_local_to_global_dofs()))
         
     lgmap = lambda indices: (PETSc.LGMap().create(indices, comm=comm)
                              if isinstance(indices, list)
                              else
                              PETSc.LGMap().createIS(indices))
     
-    row_lgmap, col_lgmap = map(lgmap, (row_map, col_map))
+    row_lgmap, col_lgmap = list(map(lgmap, (row_map, col_map)))
 
 
     # Alloc

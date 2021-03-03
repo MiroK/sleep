@@ -86,7 +86,6 @@ if __name__ == '__main__':
                   CompiledSubDomain('near(x[1], 0)'),
                   CompiledSubDomain('near(x[1], 1)')]
 
-    set_log_level(WARNING)
     # Check convergence
     for n in (8, 16, 32, 64):
         mesh = UnitSquareMesh(n, n)

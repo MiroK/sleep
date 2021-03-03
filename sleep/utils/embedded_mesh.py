@@ -2,7 +2,7 @@
 # dencies
 from sleep.utils.make_mesh_cpp import make_mesh
 from collections import defaultdict
-from itertools import chain
+from itertools import chain, permutations
 import dolfin as df
 import numpy as np
 import operator
@@ -40,7 +40,7 @@ class EmbeddedMesh(df.Mesh):
 
             # So everybody is marked as 1
             one_cell_f = df.MeshFunction('size_t', base_mesh, tdim, 0)
-            for cells in color_cells.itervalues(): one_cell_f.array()[cells] = 1
+            for cells in color_cells.values(): one_cell_f.array()[cells] = 1
             
             # The Embedded mesh now steals a lot from submesh
             submesh = df.SubMesh(base_mesh, one_cell_f, 1)
@@ -61,7 +61,7 @@ class EmbeddedMesh(df.Mesh):
             f_values = f.array()
             if len(markers) > 1:
                 old2new = dict(zip(mapping_tdim, range(len(mapping_tdim))))
-                for color, old_cells in color_cells.iteritems():
+                for color, old_cells in color_cells.items():
                     new_cells = np.array([old2new[o] for o in old_cells], dtype='uintp')
                     f_values[new_cells] = color
             else:
@@ -152,40 +152,47 @@ class EmbeddedMesh(df.Mesh):
         for entity in tagged_entities:
             # We need to be able to embed all vertices in order to get a cell
             entity_vertices = e2v(entity).tolist()
-            # The observation is that in working case there is one cell that
-            # can embedded all vertices of the entity
-            the_cell = set()
-            # The tree collisions can give false positives so shall compare
-            # coordinates with
-            is_reachable = True
-            while is_reachable and entity_vertices:
-                v = entity_vertices.pop()
-                v_cells = tree.compute_collisions(df.Point(x_parent[v]))
-                # True isect is a cell which has v
-                v_cells = [c for c in v_cells if min(np.linalg.norm(x_parent[v] - x[c2v(c)], 2, 1)) < tol]
-
-                # Such cell is for such not the one that collides
-                is_reachable = bool(len(v_cells))            
-                (is_reachable and the_cell) and the_cell.intersection_update(v_cells)
-                (is_reachable and not the_cell) and the_cell.update(v_cells)
-
-            if is_reachable:
-                the_cell, = the_cell  # The uniqueness
-                entity_mapping[the_cell] = entity
+            # First seek self cells that collide with the vertex.
+            v_cells = set(sum((list(tree.compute_collisions(df.Point(x_parent[v])))
+                               for v in entity_vertices), []))
+            
+            emp = np.mean(x_parent[entity_vertices], axis=0)
+            # The one closest by midpoint criterion better embed the entity
+            v_cells = sorted(v_cells,
+                             key = lambda c: np.linalg.norm(emp - np.mean(x[c2v(c)], axis=0)),
+                             reverse=True)
+            
+            found = False
+            distances = defaultdict(list)
+            # Ideally only one pop is needed as the last(v_cells) is the
+            # best match in terms of midpoints. That cell should be able
+            # embed the vertices
+            while v_cells and not found:
+                the_cell = v_cells.pop()
+                cell_vertices = c2v(the_cell)
+                cell_vertices_x = x[cell_vertices]
                 
                 # And now pair the vertices
-                entity_vertices = e2v(entity).tolist()
+                entity_vertices = e2v(entity)
+                entity_vertices_x = x_parent[entity_vertices]
+                # There eventually must exist a permutation of cell vertices that matches
+                # the entity
+                perms = permutations(range(len(cell_vertices)), len(cell_vertices))
+                for perm in map(list, perms):
+                    dist = np.linalg.norm(entity_vertices_x - cell_vertices_x[perm])
+                    found = dist  < tol
+                    # Keep track of geometrical matches for debugging
+                    distances[the_cell].append(dist)
+                    if found: break
+                    
+            assert found, f'Embedding failed {distances}'
+            # Set mappings
+            for ev, cv in zip(entity_vertices, cell_vertices[perm]):
+                vertex_mapping[cv] = ev
+            entity_mapping[the_cell] = entity
 
-                for vp in c2v(the_cell):
-                    if vp not in vertex_mapping:
-                        dist = np.linalg.norm(x[vp] - x_parent[entity_vertices], 2, 1)
-                        i = np.argmin(dist)
-                        assert dist[i] < tol, dist[i]
-                        
-                        vertex_mapping[vp] = entity_vertices[i]
-                    entity_vertices.remove(vertex_mapping[vp])
-
-        self.parent_entity_map[parent_mesh.id()] = {0: vertex_mapping, tdim: entity_mapping}
+        self.parent_entity_map[parent_mesh.id()] = {0: vertex_mapping,
+                                                    tdim: entity_mapping}
 
         return self.parent_entity_map[parent_mesh.id()]
 
@@ -252,7 +259,7 @@ def embed_mesh(child_mesh, parent_mesh, TOL=1E-8):
     maybe = []
     # Let's see about vertex emebedding - reduce to candidates
     for i, xi in enumerate(parent_x):
-        tree.collides(df.Point(xi)) and maybe.append(i)
+        tree.compute_collisions(df.Point(xi)) and maybe.append(i)
     assert maybe
     print('Checking {} / {} parent vertices'.format(len(maybe), len(parent_x)))
     maybe_x = parent_x[maybe]

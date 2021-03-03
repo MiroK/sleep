@@ -41,7 +41,6 @@ def trace_matrix(V, TV, trace_mesh):
     assert TV.mesh().id() == trace_mesh.id()
     
     # Compatibility of spaces
-    assert V.dolfin_element().value_rank() == TV.dolfin_element().value_rank()
     assert V.ufl_element().value_shape() == TV.ufl_element().value_shape()
     assert trace_cell(V) == TV.mesh().ufl_cell()
     assert V.mesh().geometry().dim() == TV.mesh().geometry().dim()

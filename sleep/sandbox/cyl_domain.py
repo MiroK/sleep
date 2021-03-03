@@ -1,7 +1,7 @@
 from dolfin import *
 import sympy as sp
 from sympy.printing import ccode
-
+from ufl import transpose
 
 def expr_body(expr, **kwargs):
     if not hasattr(expr, '__len__'):
@@ -63,7 +63,7 @@ def mapping_generator(f, bdries, expressions, tags):
 
         
 def compute_mapping(gen, t):
-    gen.next()
+    next(gen)
     return gen.send(t)
         
 # -------------------------------------------------------------------
@@ -95,30 +95,16 @@ if __name__ == '__main__':
 
     top, bottom = 2, 1
     left, right = 3, 4
-    if True:
-        n = 32
-        mesh = RectangleMesh(Point(0.5, -1), Point(1, 1), n, n)
 
-        bdries = MeshFunction('size_t', mesh, 1, 0)
+    n = 32
+    mesh = RectangleMesh(Point(0.5, -1), Point(1, 1), n, n)
+
+    bdries = MeshFunction('size_t', mesh, 1, 0)
     
-        CompiledSubDomain('near(x[1], 1)').mark(bdries, top)
-        CompiledSubDomain('near(x[1], -1)').mark(bdries, bottom)
-        CompiledSubDomain('near(x[0]-0.5, 0)').mark(bdries, left)
-        CompiledSubDomain('near(x[0]-1, 0)').mark(bdries, right)
-    else:
-        from domain_generation import generate_mesh
-        
-        mesh, bdries = generate_mesh(r_inner=0.5,
-                                     r_outer=1.0,
-                                     length=2,
-                                     inner_p=(0.5, 0.0),
-                                     outer_p=(0.8, 0.0),
-                                     inner_size=0.5,
-                                     outer_size=1.,
-                                     size=1.,
-                                     scale=1./2**4,
-                                     save='')
-
+    CompiledSubDomain('near(x[1], 1)').mark(bdries, top)
+    CompiledSubDomain('near(x[1], -1)').mark(bdries, bottom)
+    CompiledSubDomain('near(x[0]-0.5, 0)').mark(bdries, left)
+    CompiledSubDomain('near(x[0]-1, 0)').mark(bdries, right)
         
     bdry_exprs = [Expression(ccode(bdry_motion).replace('M_PI', 'pi'),
                              A=A_value, k=k_value, c=c_value, t=t_value, degree=3),
@@ -205,6 +191,6 @@ if __name__ == '__main__':
         u_out << (fuh, t)
         p_out << (fph, t)
 
-        print t, wh.vector().norm('l2')
+        print(t, wh.vector().norm('l2'))
         t_min.append(min(cell.volume() for cell in cells(f_mesh)))
-    print 'Tmin', min(t_min)
+    print('Tmin', min(t_min))
