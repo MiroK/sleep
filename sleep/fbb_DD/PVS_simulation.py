@@ -6,7 +6,7 @@ import os
 
 import numpy as np
 
-from sleep.fbb_DD.advection import solve_adv_diff as solve_adv_diff
+from sleep.fbb_DD.advection import solve_adv_diff_cyl as solve_adv_diff
 from sleep.fbb_DD.fluid import solve_fluid_cyl as solve_fluid
 from sleep.fbb_DD.ale import solve_ale_cyl as solve_ale
 from sleep.utils import EmbeddedMesh
@@ -20,6 +20,7 @@ from dolfin import *
 #logging.error
 #logging.critical
 
+#todo : debug the slice extraction, seems to be out of domain after deformation
 #todo : add dt and n steps management
 #todo : check the BC resistance ---> FFC compile again during the run. Is it normal? How to remove the info from the log ?
 #todo : change location of umax for cylindrical
