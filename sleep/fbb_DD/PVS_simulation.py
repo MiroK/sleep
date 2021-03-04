@@ -13,7 +13,6 @@ from sleep.utils import EmbeddedMesh
 from sleep.mesh import load_mesh2d
 from dolfin import *
 
-
 #logging.debug
 #logging.info
 #logging.warning
@@ -311,7 +310,7 @@ def PVS_simulation(args):
     import sympy
     tn = sympy.symbols("tn")
     tnp1 = sympy.symbols("tnp1")
-    cos = sympy.cos
+    sin = sympy.sin
 
     logging.info('\n * wall motion parameters')
     ai=args.ai
@@ -321,14 +320,14 @@ def PVS_simulation(args):
     logging.info('fi (Hz) : '+'%e '*len(fi)%tuple(fi))
     logging.info('phii (rad) : '+'%e '*len(phii)%tuple(phii))
 
-    functionU = Rv*sum([a*cos(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]) # displacement
+    functionU = Rv*sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]) # displacement
     U_vessel = sympy.printing.ccode(functionU)
 
     functionV = sympy.diff(functionU,tn) # velocity
     V_vessel = sympy.printing.ccode(functionV)
 
     #Delta U for ALE. I dont really like this
-    functionUALE=Rv*sum([a*cos(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)])-Rv*sum([a*cos(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)])
+    functionUALE=Rv*sum([a*sin(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)])-Rv*sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)])
     UALE_vessel = sympy.printing.ccode(functionUALE)   
 
     vf_bottom = Expression(('0',V_vessel ), tn = 0, degree=2)   # no slip no gap condition at vessel wall 
@@ -469,6 +468,9 @@ def PVS_simulation(args):
     time = 0.
     timestep=0
 
+    
+
+
     # Here I dont know if there will be several dt for advdiff and fluid solver
     while time < tfinal:
 
@@ -517,7 +519,9 @@ def PVS_simulation(args):
         # Save output
         if(timestep % int(toutput/dt) == 0):
 
-            logging.info("save output time %e s"%time)
+            
+
+            logging.info("\n*** save output time %e s"%time)
             logging.info("number of time steps %i"%timestep)
 
             # may report Courant number or other important values that indicate how is doing the run
@@ -533,24 +537,30 @@ def PVS_simulation(args):
             # Get the 1 D profiles at umax (to be changed in cyl coordinate)
             mesh_points=mesh_f.coordinates()                                                      
             x=mesh_points[:,0]
-            r=mesh_points[:,1]
-            Rvn=min(r)
+            y=mesh_points[:,1]
+            xmin=min(x)
+            xmax=max(x)
+            ymin=min(y)
+            ymax=max(y)
                         
-            slice_line = line([0,(Rpvs+Rvn)/2],[L,(Rpvs+Rvn)/2], 100)
+            slice_line = line([xmin,(ymin+ymax)/2],[xmax,(ymin+ymax)/2], 100)
 
-            logging.info('Rvn : %e'%Rvn)
-            logging.info('Mid point : %e'%((Rpvs+Rvn)/2))
+            logging.info('Rpvs : %e'%ymax)
+            logging.info('Rvn : %e'%ymin)
+            logging.info('Mid point : %e'%((ymin+ymax)/2))
 
             files=[csv_p,csv_u,csv_c]
             fields=[pf_n,uf_n.sub(0),c_n]
             field_names=['pressure (dyn/cm2)','axial velocity (cm/s)','concentration']
+
             for csv_file,field,name in zip(files,fields,field_names) :
                 values = line_sample(slice_line, field)
                 logging.info('Max '+name+' : %.2e'%max(abs(values)))
+                logging.info('Norm '+name+' : %.2e'%field.vector().norm('linf'))
                 row=[time]+list(values)
                 csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
 
-            csv_rv.write('%e, %e'%(time,Rvn))
+            csv_rv.write('%e, %e'%(time,ymin))
 
 
 
