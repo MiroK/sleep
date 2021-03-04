@@ -490,6 +490,7 @@ def PVS_simulation(args):
         eta_f = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale,
                       parameters=ale_parameters)
         ALE.move(mesh_f, eta_f)
+        mesh_f.bounding_box_tree().build(mesh_f)
 
         # Solve fluid problem
         uf_, pf_ = solve_fluid(Wf, u_0=uf_n,  f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_fluid,
