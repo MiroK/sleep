@@ -20,9 +20,15 @@ from dolfin import *
 #logging.error
 #logging.critical
 
-#todo : debug the slice extraction, seems to be out of domain after deformation
+# What are the stability conditions for time step ???
 #todo : add dt and n steps management
-#todo : check the BC resistance ---> FFC compile again during the run. Is it normal? How to remove the info from the log ?
+
+
+# for the resistance BC : It does not work fo high resistance (ex R=1e11), we cannot tend to zero flow case. 
+# Should we iterate ? 
+# Need to analyse for time step convergence. 
+
+#todo : debug the slice extraction, seems to be out of domain after deformation
 #todo : change location of umax for cylindrical
 
 #todo : external script to postprocess u p c profiles : figure , compute coef dispertion
@@ -84,6 +90,7 @@ def PVS_simulation(args):
     csv_p=open(outputfolder+'profiles'+'/pressure.txt', 'w')
     csv_u=open(outputfolder+'profiles'+'/velocity.txt', 'w')
     csv_c=open(outputfolder+'profiles'+'/concentration.txt', 'w')
+    csv_rv=open(outputfolder+'profiles'+'/radius.txt', 'w')
 
     #pvd files
     uf_out, pf_out= File(outputfolder+'fields'+'/uf.pvd'), File(outputfolder+'fields'+'/pf.pvd')
@@ -304,7 +311,7 @@ def PVS_simulation(args):
     import sympy
     tn = sympy.symbols("tn")
     tnp1 = sympy.symbols("tnp1")
-    sin = sympy.sin
+    cos = sympy.cos
 
     logging.info('\n * wall motion parameters')
     ai=args.ai
@@ -314,14 +321,14 @@ def PVS_simulation(args):
     logging.info('fi (Hz) : '+'%e '*len(fi)%tuple(fi))
     logging.info('phii (rad) : '+'%e '*len(phii)%tuple(phii))
 
-    functionU = Rv*sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]) # displacement
+    functionU = Rv*sum([a*cos(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]) # displacement
     U_vessel = sympy.printing.ccode(functionU)
 
     functionV = sympy.diff(functionU,tn) # velocity
     V_vessel = sympy.printing.ccode(functionV)
 
     #Delta U for ALE. I dont really like this
-    functionUALE=Rv*sum([a*sin(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)])-Rv*sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)])
+    functionUALE=Rv*sum([a*cos(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)])-Rv*sum([a*cos(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)])
     UALE_vessel = sympy.printing.ccode(functionUALE)   
 
     vf_bottom = Expression(('0',V_vessel ), tn = 0, degree=2)   # no slip no gap condition at vessel wall 
@@ -372,7 +379,7 @@ def PVS_simulation(args):
 
     elif lateral_bc=='resistance' :
 
-        Rpressure=Expression('R*Q+p0', R = resistance, Q=0, p0=0) #
+        Rpressure=Expression('R*Q+p0', R = resistance, Q=0, p0=0, degree=1) #
   
         # Compute pressure to impose according to the flow at previous time step and resistance.
 
@@ -471,9 +478,13 @@ def PVS_simulation(args):
             hasattr(expr, 'tnp1') and setattr(expr, 'tnp1', time+dt)
 
         if lateral_bc=='resistance' :
-            Q=assemble(dot(u_n, n)*ds(facet_lookup['x_max']))
-            setattr(Rpressure, 'Q', Q)
+            z, r = SpatialCoordinate(mesh_f)
+            ds = Measure('ds', domain=mesh_f, subdomain_data=fluid_bdries)
+            n = FacetNormal(mesh_f)
+            Flow=assemble(2*pi*r*dot(uf_n, n)*ds(facet_lookup['x_max']))
 
+            print('Right outflow : %e \n'%Flow)
+            setattr(Rpressure, 'Q', Flow)
 
         # Solve ALE and move mesh 
         eta_f = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale,
@@ -520,16 +531,26 @@ def PVS_simulation(args):
 
 
             # Get the 1 D profiles at umax (to be changed in cyl coordinate)
-            Rvn=Rv+functionU.subs(tn, time)
+            mesh_points=mesh_f.coordinates()                                                      
+            x=mesh_points[:,0]
+            r=mesh_points[:,1]
+            Rvn=min(r)
+                        
             slice_line = line([0,(Rpvs+Rvn)/2],[L,(Rpvs+Rvn)/2], 100)
+
+            logging.info('Rvn : %e'%Rvn)
+            logging.info('Mid point : %e'%((Rpvs+Rvn)/2))
 
             files=[csv_p,csv_u,csv_c]
             fields=[pf_n,uf_n.sub(0),c_n]
-
-            for csv_file,field in zip(files,fields) :
-                values = line_sample(slice_line, field) 
+            field_names=['pressure (dyn/cm2)','axial velocity (cm/s)','concentration']
+            for csv_file,field,name in zip(files,fields,field_names) :
+                values = line_sample(slice_line, field)
+                logging.info('Max '+name+' : %.2e'%max(abs(values)))
                 row=[time]+list(values)
                 csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
+
+            csv_rv.write('%e, %e'%(time,Rvn))
 
 
 
