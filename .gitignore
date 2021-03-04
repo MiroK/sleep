@@ -5,6 +5,8 @@
 
 *.pvd
 *.vtu
+*.txt
+*.log
 
 ### vscode ###
 .devcontainer/*
