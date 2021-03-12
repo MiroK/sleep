@@ -318,8 +318,9 @@ def PVS_simulation(args):
     tn = sympy.symbols("tn")
     tnp1 = sympy.symbols("tnp1")
     sin = sympy.sin
+    sqrt = sympy.sqrt
 
-    logging.info('\n * wall motion parameters')
+    logging.info('\n * Cross section area parameters')
     ai=args.ai
     fi=args.fi
     phii=args.phii
@@ -327,14 +328,14 @@ def PVS_simulation(args):
     logging.info('fi (Hz) : '+'%e '*len(fi)%tuple(fi))
     logging.info('phii (rad) : '+'%e '*len(phii)%tuple(phii))
 
-    functionU = Rv*sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]) # displacement
-    U_vessel = sympy.printing.ccode(functionU)
+    functionR = Rv*sqrt(1+sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)])) # displacement
+    R_vessel = sympy.printing.ccode(functionR)
 
-    functionV = sympy.diff(functionU,tn) # velocity
+    functionV = sympy.diff(functionR,tn) # velocity
     V_vessel = sympy.printing.ccode(functionV)
 
     #Delta U for ALE. I dont really like this
-    functionUALE=Rv*sum([a*sin(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)])-Rv*sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)])
+    functionUALE=Rv*sqrt(1+sum([a*sin(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)])) -Rv*sqrt(1+sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)])) 
     UALE_vessel = sympy.printing.ccode(functionUALE)   
 
     vf_bottom = Expression(('0',V_vessel ), tn = 0, degree=2)   # no slip no gap condition at vessel wall 
@@ -501,6 +502,8 @@ def PVS_simulation(args):
         ALE.move(mesh_f, eta_f)
         mesh_f.bounding_box_tree().build(mesh_f)
 
+
+
         # Solve fluid problem
         uf_, pf_ = solve_fluid(Wf, u_0=uf_n,  f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_fluid,
                             parameters=fluid_parameters)
@@ -511,7 +514,7 @@ def PVS_simulation(args):
         tracer_parameters["dt"]=dt
 
         # Solve tracer problem
-        c_, T0= solve_adv_diff(Ct, velocity=uf_, f=Constant(0), phi_0=c_n,
+        c_, T0= solve_adv_diff(Ct, velocity=uf_, mesh_displacement=eta_f, f=Constant(0), phi_0=c_n,
                                   bdries=fluid_bdries, bcs=bcs_tracer, parameters=tracer_parameters)
 
 
