@@ -5,6 +5,7 @@ from datetime import datetime
 import os
 
 import numpy as np
+from math import pi
 
 from sleep.fbb_DD.advection import solve_adv_diff_cyl as solve_adv_diff
 from sleep.fbb_DD.fluid import solve_fluid_cyl as solve_fluid
@@ -13,24 +14,15 @@ from sleep.utils import EmbeddedMesh
 from sleep.mesh import load_mesh2d
 from dolfin import *
 
-#logging.debug
-#logging.info
-#logging.warning
-#logging.error
-#logging.critical
 
-# What are the stability conditions for time step ???
+# What are the conditions for time step ?
+# All implicit so the only worry is numerical diffusion.
 #todo : add dt and n steps management
 
 
 # for the resistance BC : It does not work fo high resistance (ex R=1e11), we cannot tend to zero flow case. 
 # Should we iterate ? 
 # Need to analyse for time step convergence. 
-
-#todo : debug the slice extraction, seems to be out of domain after deformation
-#todo : change location of umax for cylindrical
-
-#todo : external script to postprocess u p c profiles : figure , compute coef dispertion
 
 
 # Define line function for 1D slice evaluation
@@ -42,6 +34,19 @@ def line_sample(line, f, fill=np.nan):
         except RuntimeError:
             continue
     return values
+
+def slice_integrate_cyl(x,f,ymin,ymax,N=10) :
+    vertical_line=line([x,ymin],[x,ymax], N)
+    values=line_sample(vertical_line, f)
+    r=np.linspace(ymin,ymax,N)
+    integral=2*np.trapz(values*r,r)/(ymax**2-ymin**2) #cylindrical coordinate
+    return integral
+
+def profile_cyl(f,xmin,xmax,ymin,ymax,Nx=100,Ny=10):
+    spanx=np.linspace(xmin,xmax,Nx)
+    values=[slice_integrate_cyl(x,f,ymin,ymax,N=Ny) for x in spanx]
+    return np.array(values)
+
 
 
 def line(A, B, nsteps):
@@ -74,8 +79,6 @@ def PVS_simulation(args):
     if not os.path.exists(outputfolder):
         os.makedirs(outputfolder)
 
-    if not os.path.exists(outputfolder+'/log'):
-        os.makedirs(outputfolder+'/log')
 
     if not os.path.exists(outputfolder+'/profiles'):
         os.makedirs(outputfolder+'/profiles')
@@ -102,8 +105,8 @@ def PVS_simulation(args):
 
     # log to a file
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = os.path.join(outputfolder+'/log/', 'PVS_%s.log' % now)
-    file_handler = logging.FileHandler(filename)
+    filename = os.path.join(outputfolder+'/', 'PVS_info.log')
+    file_handler = logging.FileHandler(filename,mode='w')
     file_handler.setLevel(logging.INFO)
     #formatter = logging.Formatter("%(asctime)s %(filename)s, %(lineno)d, %(funcName)s: %(message)s")
     #file_handler.setFormatter(formatter)
@@ -196,6 +199,10 @@ def PVS_simulation(args):
     sigma_gauss=args.sigma
     logging.info('Free diffusion coef: %e cm2/s'%D)
     logging.info('STD of initial gaussian profile: %e '%sigma_gauss)
+    xi_gauss=args.initial_pos
+    logging.info('Initial position: %e cm2'%xi_gauss)
+
+
 
     logging.info('\n * ALE')
     kappa=args.ale_parameter
@@ -432,7 +439,7 @@ def PVS_simulation(args):
     logging.info("                STD parameter = %e"%sigma_gauss)
 
 
-    c_0 = Expression('exp(-a*pow(x[0]-b, 2)) ', degree=1, a=1/2/sigma_gauss**2, b=L/2)
+    c_0 = Expression('exp(-a*pow(x[0]-b, 2)) ', degree=1, a=1/2/sigma_gauss**2, b=xi_gauss)
     c_n =  project(c_0,Ct)
 
     # Save initial state
@@ -488,7 +495,7 @@ def PVS_simulation(args):
             print('Right outflow : %e \n'%Flow)
             setattr(Rpressure, 'Q', Flow)
 
-        # Solve ALE and move mesh 
+        #Solve ALE and move mesh 
         eta_f = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale,
                       parameters=ale_parameters)
         ALE.move(mesh_f, eta_f)
@@ -544,20 +551,20 @@ def PVS_simulation(args):
             ymin=min(y)
             ymax=max(y)
                         
-            slice_line = line([xmin,(ymin+ymax)/2],[xmax,(ymin+ymax)/2], 100)
+            #slice_line = line([xmin,(ymin+ymax)/2],[xmax,(ymin+ymax)/2], 100)
 
             logging.info('Rpvs : %e'%ymax)
             logging.info('Rvn : %e'%ymin)
-            logging.info('Mid point : %e'%((ymin+ymax)/2))
 
             files=[csv_p,csv_u,csv_c]
             fields=[pf_n,uf_n.sub(0),c_n]
             field_names=['pressure (dyn/cm2)','axial velocity (cm/s)','concentration']
 
             for csv_file,field,name in zip(files,fields,field_names) :
-                values = line_sample(slice_line, field)
+                #values = line_sample(slice_line, field)
+                values =profile_cyl(field,xmin,xmax,ymin,ymax)
                 logging.info('Max '+name+' : %.2e'%max(abs(values)))
-                logging.info('Norm '+name+' : %.2e'%field.vector().norm('linf'))
+                #logging.info('Norm '+name+' : %.2e'%field.vector().norm('linf'))
                 row=[time]+list(values)
                 csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
 
@@ -579,7 +586,7 @@ if __name__ == '__main__':
 
     my_parser.add_argument('-o','--output_folder',
                             type=str,
-                            default="./output",
+                            default="../output/",
                             help='Folder where the results are stored')
 
     my_parser.add_argument('-rv','--radius_vessel',
@@ -672,7 +679,10 @@ if __name__ == '__main__':
                         default=1e-4,
                         help='STD gaussian init for concentration')
 
-
+    my_parser.add_argument('-xi','--initial_pos',
+                        type=float,
+                        default=0,
+                        help='Initial center of the gaussian for concentration')
 
     args = my_parser.parse_args()
 
