@@ -17,7 +17,7 @@ import ulfy  # https://github.com/MiroK/ulfy
 #
 # is solved on FE space W
 
-def solve_adv_diff_cyl(W, velocity, f, phi_0, bdries, bcs, parameters):
+def solve_adv_diff_cyl(W, velocity, mesh_displacement,f, phi_0, bdries, bcs, parameters):
     '''Return concentration field'''
     info('Solving advection-diffusion for %d unknowns' % W.dim())
     assert W.ufl_element().family() == 'Lagrange'
@@ -59,16 +59,20 @@ def solve_adv_diff_cyl(W, velocity, f, phi_0, bdries, bcs, parameters):
     velocity = as_vector((velocity[0],
                           velocity[1],
                           Constant(0)))
+
+    mesh_velocity=as_vector((mesh_displacement[0]/dt,
+                          mesh_displacement[1]/dt,
+                          Constant(0)))
     # ... however, we are still in 2d
     z, r = SpatialCoordinate(mesh)
 
     phi_0 = interpolate(phi_0, W)
     # Usual backward Euler
-    system = (inner((phi - phi_0)/dt, psi)*r*dx + dot(velocity, cyl.GradAxisym(phi))*psi*r*dx +
+    system = (inner((phi - phi_0)/dt, psi)*r*dx + dot(velocity-mesh_velocity, cyl.GradAxisym(phi))*psi*r*dx +
               kappa*inner(cyl.GradAxisym(phi), cyl.GradAxisym(psi))*r*dx - inner(f, psi)*r*dx)
     
     # SUPG stabilization
-    if parameters.get('supg', False):
+    if parameters.get('supg', False): #return false if key does not exists
         info(' Adding SUPG stabilization')
         h = CellDiameter(mesh)
 
