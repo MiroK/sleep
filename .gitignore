@@ -8,8 +8,13 @@
 *.txt
 *.log
 
-*.mesh
+*.msh
 *.h5
+
+*.ipynb
+*.csv
+
+
 ### vscode ###
 .devcontainer/*
 .vscode/*
