@@ -143,27 +143,22 @@ def PVS_simulation(args):
     Rpvs =args.radius_pvs # centimeters
     L = args.length # centimeters
 
-    Rsas=100e-4+Rv
-    Lsas=20e-4
+
+    Rsas=args.radius_sas+Rv
+    Lsas=args.length_sas
 
     logging.info('Vessel radius : %e cm'%Rv)
     logging.info('PVS radius : %e cm'%Rpvs)
     logging.info('PVS length : %e cm'%L)
+    logging.info('SAS length : %e cm'%Lsas)
+    logging.info('SAS radius : %e cm'%Rsas)
 
     #Mesh
     logging.info('\n * Mesh')
     #number of cells in the radial direction
     Nr=args.N_radial
     DR=(Rpvs-Rv)/Nr
-    #number of cells in the axial direction
-    if args.N_axial :
-        Nl=args.N_axial
-    else :
-        Nl=round(L/DR)
-
-    DY=L/Nl
     
-    logging.info('N axial : %i'%Nl)
     logging.info('N radial : %e'%Nr)
 
     
@@ -234,28 +229,12 @@ def PVS_simulation(args):
     # Mesh
     logging.info(title1('Meshing'))
 
-    cell_size=np.sqrt(DR**2+DY**2)
+    cell_size=DR
 
 
     logging.info('cell size : %e cm'%(cell_size))
-    logging.info('nb cells: %i'%(Nl*Nr*2))
-
-    #mesh_f= RectangleMesh(Point(0, Rv), Point(L, Rpvs), Nl, Nr)
 
 
-    #Geometry computations
-    domain_vertices = [Point(0, Rv),
-                       Point(L,Rv),
-                       Point(L,Rpvs),
-                       Point(0,Rpvs),
-                       Point(0,Rsas),
-                       Point(-Lsas,Rsas),
-                       Point(-Lsas,Rv),
-                       Point(0,Rv)]
-
-    domain = Polygon(domain_vertices)
-
-    mesh_f = generate_mesh(domain,20000)
 
     from sleep.mesh import mesh_model2d, load_mesh2d, set_mesh_size
     import sys
@@ -303,8 +282,8 @@ def PVS_simulation(args):
     field.setNumber(fid, 'XMax', L)
     field.setNumber(fid, 'YMin', Rv)
     field.setNumber(fid, 'YMax', Rpvs)
-    field.setNumber(fid, 'VIn', (Rpvs-Rv)/Nr)
-    field.setNumber(fid, 'VOut', (Rpvs-Rv)/Nr*50 )
+    field.setNumber(fid, 'VIn', cell_size)
+    field.setNumber(fid, 'VOut', cell_size*50 )
     field.setNumber(fid, 'Thickness', Rsas)
 
     boxes.append(fid)
@@ -326,6 +305,9 @@ def PVS_simulation(args):
     
     gmsh.finalize()
 
+    # todo : how to know nb of cells ?
+    #logging.info('nb cells: %i'%(Nl*Nr*2))
+
 
     fluid_bdries = MeshFunction("size_t", mesh_f, mesh_f.topology().dim()-1,0)
 
@@ -339,7 +321,7 @@ def PVS_simulation(args):
     ymax=y.max()
 
 
-    tol=min(DR,DY)/2 #cm
+    tol=cell_size/2 #cm
 
     
     class Boundary_sas_left(SubDomain):
@@ -791,10 +773,6 @@ if __name__ == '__main__':
                         default=8,
                         help='number of cells in the radial direction')
 
-    my_parser.add_argument('-nl','--N_axial',
-                        type=int,
-                        default=400,
-                        help='number of cells in the axial direction')
 
     my_parser.add_argument('-d','--diffusion_coef',
                         type=float,
@@ -808,8 +786,18 @@ if __name__ == '__main__':
 
     my_parser.add_argument('-xi','--initial_pos',
                         type=float,
-                        default=0,
+                        default=100e-4,
                         help='Initial center of the gaussian for concentration')
+
+    my_parser.add_argument('-Lsas','--length_sas',
+                        type=float,
+                        default=40e-4,
+                        help='length of the SAS in the axial direction')
+
+    my_parser.add_argument('-Rsas','--radius_sas',
+                        type=float,
+                        default=100e-4,
+                        help='radius of the SAS')
 
     args = my_parser.parse_args()
 
