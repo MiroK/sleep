@@ -328,14 +328,16 @@ def PVS_simulation(args):
     logging.info('fi (Hz) : '+'%e '*len(fi)%tuple(fi))
     logging.info('phii (rad) : '+'%e '*len(phii)%tuple(phii))
 
-    functionR = Rv*sqrt(1+sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)])) # displacement
+
+
+    functionR = sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))) # displacement
     R_vessel = sympy.printing.ccode(functionR)
 
     functionV = sympy.diff(functionR,tn) # velocity
     V_vessel = sympy.printing.ccode(functionV)
 
     #Delta U for ALE. I dont really like this
-    functionUALE=Rv*sqrt(1+sum([a*sin(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)])) -Rv*sqrt(1+sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)])) 
+    functionUALE=sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*sin(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)])))- sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))) 
     UALE_vessel = sympy.printing.ccode(functionUALE)   
 
     vf_bottom = Expression(('0',V_vessel ), tn = 0, degree=2)   # no slip no gap condition at vessel wall 
