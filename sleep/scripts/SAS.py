@@ -20,17 +20,17 @@ import os
 
 meshdir='../mesh/gmsh_export/'
 # output folder name
-outputfolder='../output/SAS_injection_HB/'
+outputfolder='../output/SAS_5s/'
 
 
-tfinal=5*60
-toutput=1
-dt=1/10/8
+tfinal=0.3
+toutput=1/10/50
+dt=1/10/50
 
 #Geometry
 r_in=3e-1
 r_spinal=0.5e-1
-h=0.1e-1
+h=0.2e-1
 xmax=8e-1
 
 # tracer
@@ -49,7 +49,7 @@ uf_out, pf_out= df.File(outputfolder+'fields'+'/uf.pvd'), df.File(outputfolder+'
 c_out= df.File(outputfolder+'fields'+'/c.pvd')
 
 # load mesh
-gmsh_file=meshdir+"/SAS_medium_injection.msh"
+gmsh_file=meshdir+"/SAS_cyl.msh"
 h5_file=convert(gmsh_file)
 
 mesh = df.Mesh()
@@ -111,7 +111,7 @@ dx_tracer=0.05e-1
 class Boundary_injection(df.SubDomain):
     def inside(self, x, on_boundary):
         r = math.sqrt(x[0] * x[0] + x[1] * x[1])
-        return on_boundary  and df.near(r,r_in+h,tol) and (x[0] > 2.85e-1)  and (x[0] < 2.85e-1+dx_tracer) and (x[0] >0)
+        return on_boundary  and df.near(r,r_in+h,tol) and (x[0] > 2.5e-1)  and (x[0] < 2.5e-1+dx_tracer) and (x[0] >0)
 
 
 
@@ -150,20 +150,20 @@ df.File('./meshview/fbb_facets.pvd') << facet_f
 ## Define boundary conditions
 
 #Brain outflow due to vessel contraction/dilation
-blood_vol=12.5e-3  #cm3 total cerebral blood volume
-brainvolume= 400e-3 #cm3
-blood_vol=0.035*brainvolume
-pc_arterioles=0.2 #pc of total blood volume in arterioles
+blood_vol=12.5e-3#*1.5  #cm3 total cerebral blood volume
+#brainvolume= 400e-3 #cm3
+#blood_vol=0.035*brainvolume
+pc_arterioles=0.1 #pc of total blood volume in arterioles
 V0_arterioles=pc_arterioles*blood_vol
-amp=0.02 # ratio of volume change in the arterioles
+amp=0.01 # ratio of volume change in the arterioles
 w=2*math.pi*10 #frequency
-#Varterioles=V0(1+asin(wt))
+#Varterioles=LA0(1+asin(wt))
 #Qsurf=dVarterioles/dt
-#Qsurf=V0*a*cos(wt)
+#Qsurf=V0*a*w*cos(wt)
 #Usurf=Qsurf/Area=Qsurf/(4*pi*r^2)
-U0=amp*V0_arterioles/(4*math.pi*r_in**2)
+U0=amp*V0_arterioles*w/(4*math.pi*r_in**2)
 
-u_brain = df.Expression(('u*cos(w*time)*cos(acos(x[0]/r))','u*cos(w*time)*sin(acos(x[0]/r))'),u=U0, w=w, r=r_in*(1+h/10), time=0.0, degree=2)
+u_brain = df.Expression(('u*cos(w*time)*cos(acos(x[0]/r))','u*cos(w*time)*sin(acos(x[0]/r))'),u=U0*0.2, w=w, r=r_in*(1+h/10), time=0.0, degree=2)
 # I set r=r_in +h/10 because if not a get na, probably because of tol in x value and acos maube not define for x/r=1
 
 # injection of tracer over the first 2.5 minutes at a rate of 1ul/min
@@ -172,7 +172,7 @@ z, r = df.SpatialCoordinate(mesh)
 ds = df.Measure('ds', domain=mesh, subdomain_data=facet_f)
 surf_injection=df.assemble(2*math.pi*r*ds(facet_lookup['injection']))
 #surf_injection=2*math.pi*(r_in+h)*dx_tracer
-q_injection=1e-3/60
+q_injection=0e-3/60
 u_injection=df.Expression(('time < tend ? u*cos(acos(x[0]/r)) : 0 ','time < tend ?u*sin(acos(x[0]/r)) : 0'),u=-q_injection/surf_injection, r=(r_in+h), tend=1*60, time=0.0, degree=2)
 
 c_injection=df.Expression('time < tend ? 1 : 0 ', tend=1*60, time=0.0, degree=0)
@@ -263,7 +263,7 @@ timestep=0
 
 intQout=0
 
-Pc0=30*1333 # venous pressure
+Pc0=30*1333 # capillaries pressure
 
 Rout=(3*1333)/(3*1e-3/60) # governed by the Delta P pressure for injection at rate 3 ul/min
 
@@ -287,11 +287,11 @@ while time < tfinal:
     Q_sink=(Psas-Pss)/Rout
 
     # inflow from production
-    Pc=Pc0*(1+5*1333*math.sin(2*math.pi*10*time)) # with heart beat
+    Pc=Pc0*(1+0.025*math.sin(2*math.pi*10*time)) # with heart beat
     Psas=df.assemble(2*math.pi*r*pf_n*ds(facet_lookup['source']))/surf_source
     Q_source=(Pc-Psas)/Rprod   
 
-    u_prod.q=Q_source
+    u_prod.q=Q_source+0.8*amp*V0_arterioles*w*math.cos(w*time)
     u_abs.q=Q_sink
 
     # Compliance law dP/dt=dP/dV.dV/dt=dP/dV.qout=E*P*qout
@@ -324,7 +324,7 @@ while time < tfinal:
     tracer_parameters["T0"]=time
 
     # Solve tracer problem
-    c_, T0= solve_adv_diff(Ct, velocity=uf_, f=df.Constant(0), phi_0=c_n,
+    c_, T0= solve_adv_diff(Ct, velocity=uf_,mesh_displacement=uf_*0, f=df.Constant(0), phi_0=c_n,
                                   bdries=facet_f, bcs=bcs_tracer, parameters=tracer_parameters)
 
     # Update current solution
