@@ -153,6 +153,14 @@ def PVS_simulation(args):
     logging.info('SAS length : %e cm'%Lsas)
     logging.info('SAS radius : %e cm'%Rsas)
 
+    logging.info('\n * Cross section area deformation parameters')
+    ai=args.ai
+    fi=args.fi
+    phii=args.phii
+    logging.info('ai (dimensionless): '+'%e '*len(ai)%tuple(ai))
+    logging.info('fi (Hz) : '+'%e '*len(fi)%tuple(fi))
+    logging.info('phii (rad) : '+'%e '*len(phii)%tuple(phii))
+
     #Mesh
     logging.info('\n * Mesh')
     #number of cells in the radial direction
@@ -229,28 +237,35 @@ def PVS_simulation(args):
     # Mesh
     logging.info(title1('Meshing'))
 
-    cell_size=DR
+    
 
 
-    logging.info('cell size : %e cm'%(cell_size))
+    logging.info('cell size : %e cm'%(DR))
 
 
 
     from sleep.mesh import mesh_model2d, load_mesh2d, set_mesh_size
     import sys
 
-    if '-format' not in sys.argv:
-        sys.argv.extend(['-format', 'msh2'])
 
-    gmsh.initialize(sys.argv)
+    gmsh.initialize(['','-format', 'msh2'])
 
 
     model = gmsh.model
 
+    ## WE START at t=0.25 cycle, ie when Rv=Rmin
+    import math
+    Apvs0=math.pi*Rpvs**2
+    Av0=math.pi*Rv**2
+    A0=Apvs0-Av0
+    Amax=A0*(1+ai[0]) #todo : modify to be compatible with several ai
+    Avmin=Apvs0-Amax
+    Rvmin=math.sqrt(Avmin/math.pi)
+
     # progressive mesh 
     factory = model.occ
-    a = factory.addPoint(-Lsas, Rv,0)
-    b = factory.addPoint(L,Rv,0)
+    a = factory.addPoint(-Lsas, Rvmin,0)
+    b = factory.addPoint(L,Rvmin,0)
     c = factory.addPoint(L,Rpvs,0)
     d = factory.addPoint(0,Rpvs,0)
     e = factory.addPoint(0,Rsas,0)
@@ -273,6 +288,7 @@ def PVS_simulation(args):
         model.addPhysicalGroup(1, [tag], tag)
 
     # boxes for mesh refinement
+    cell_size=DR*(Rpvs-Rvmin)/(Rpvs-Rv)
     boxes = []
     # add box on the PVS for mesh
     field = model.mesh.field
@@ -280,7 +296,7 @@ def PVS_simulation(args):
     field.add('Box', fid)
     field.setNumber(fid, 'XMin', 0)
     field.setNumber(fid, 'XMax', L)
-    field.setNumber(fid, 'YMin', Rv)
+    field.setNumber(fid, 'YMin', Rvmin)
     field.setNumber(fid, 'YMax', Rpvs)
     field.setNumber(fid, 'VIn', cell_size)
     field.setNumber(fid, 'VOut', cell_size*50 )
@@ -413,15 +429,6 @@ def PVS_simulation(args):
     sin = sympy.sin
     sqrt = sympy.sqrt
 
-    logging.info('\n * Cross section area parameters')
-    ai=args.ai
-    fi=args.fi
-    phii=args.phii
-    logging.info('ai (dimensionless): '+'%e '*len(ai)%tuple(ai))
-    logging.info('fi (Hz) : '+'%e '*len(fi)%tuple(fi))
-    logging.info('phii (rad) : '+'%e '*len(phii)%tuple(phii))
-
-
 
     functionR = sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))) # displacement
     R_vessel = sympy.printing.ccode(functionR)
@@ -550,6 +557,7 @@ def PVS_simulation(args):
     c_n =  project(c_0,Ct)
 
     # Save initial state
+    tshift= 1/4/fi[0] ##todo : modify to be compatible with phii
     uf_n.rename("uf", "tmp")
     pf_n.rename("pf", "tmp")
     c_n.rename("c", "tmp")
@@ -579,14 +587,16 @@ def PVS_simulation(args):
     logging.info(title1("Run"))
 
     # Time loop
-    time = 0.
+    ### We start at the quarter of the period so that velocity=0
+    print('tini = ',tshift)
+    time = tshift
     timestep=0
 
     
 
 
     # Here I dont know if there will be several dt for advdiff and fluid solver
-    while time < tfinal:
+    while time < tfinal+tshift:
 
         # Update boundary conditions
         for expr in driving_expressions:
@@ -638,7 +648,7 @@ def PVS_simulation(args):
 
             
 
-            logging.info("\n*** save output time %e s"%time)
+            logging.info("\n*** save output time %e s"%(time-tshift))
             logging.info("number of time steps %i"%timestep)
 
             # may report Courant number or other important values that indicate how is doing the run
@@ -646,9 +656,9 @@ def PVS_simulation(args):
             uf_.rename("uf", "tmp")
             pf_.rename("pf", "tmp")
             c_.rename("c", "tmp")
-            uf_out << (uf_, time)
-            pf_out << (pf_, time)
-            c_out << (c_, time)
+            uf_out << (uf_, time-tshift)
+            pf_out << (pf_, time-tshift)
+            c_out << (c_, time-tshift)
 
 
             # Get the 1 D profiles at umax (to be changed in cyl coordinate)
@@ -674,10 +684,10 @@ def PVS_simulation(args):
                 values =profile_cyl(field,xmin,xmax,ymin,ymax)
                 logging.info('Max '+name+' : %.2e'%max(abs(values)))
                 #logging.info('Norm '+name+' : %.2e'%field.vector().norm('linf'))
-                row=[time]+list(values)
+                row=[time-tshift]+list(values)
                 csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
 
-            csv_rv.write('%e, %e'%(time,ymin))
+            csv_rv.write('%e, %e'%(time-tshift,ymin))
 
 
 
@@ -709,7 +719,7 @@ if __name__ == '__main__':
                         default=10e-4,
                         help='PVS outer radius as rest')
 
-    my_parser.add_argument('-l','--length',
+    my_parser.add_argument('-lpvs','--length',
                         type=float,
                         default=200e-4,
                         help='Length of the vessel')
