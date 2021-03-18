@@ -258,14 +258,17 @@ def PVS_simulation(args):
     Apvs0=math.pi*Rpvs**2
     Av0=math.pi*Rv**2
     A0=Apvs0-Av0
-    Amax=A0*(1+ai[0]) #todo : modify to be compatible with several ai
-    Avmin=Apvs0-Amax
-    Rvmin=math.sqrt(Avmin/math.pi)
+    #Amax=A0*(1+ai[0]) #todo : modify to be compatible with several ai
+    #Amin=A0*(1-ai[0]) #todo : modify to be compatible with several ai
+    #Avmin=Apvs0-Amax
+    #Avmax=Apvs0-Amin
+    #Rvmin=math.sqrt(Avmin/math.pi)
+    #Rvmax=math.sqrt(Avmax/math.pi)
 
     # progressive mesh 
     factory = model.occ
-    a = factory.addPoint(-Lsas, Rvmin,0)
-    b = factory.addPoint(L,Rvmin,0)
+    a = factory.addPoint(-Lsas, Rv,0)
+    b = factory.addPoint(L,Rv,0)
     c = factory.addPoint(L,Rpvs,0)
     d = factory.addPoint(0,Rpvs,0)
     e = factory.addPoint(0,Rsas,0)
@@ -288,7 +291,7 @@ def PVS_simulation(args):
         model.addPhysicalGroup(1, [tag], tag)
 
     # boxes for mesh refinement
-    cell_size=DR*(Rpvs-Rvmin)/(Rpvs-Rv)
+    cell_size=DR*(Rpvs-Rv)/(Rpvs-Rv)
     boxes = []
     # add box on the PVS for mesh
     field = model.mesh.field
@@ -296,10 +299,10 @@ def PVS_simulation(args):
     field.add('Box', fid)
     field.setNumber(fid, 'XMin', 0)
     field.setNumber(fid, 'XMax', L)
-    field.setNumber(fid, 'YMin', Rvmin)
+    field.setNumber(fid, 'YMin', Rv)
     field.setNumber(fid, 'YMax', Rpvs)
     field.setNumber(fid, 'VIn', cell_size)
-    field.setNumber(fid, 'VOut', cell_size*50 )
+    field.setNumber(fid, 'VOut', DR*50 )
     field.setNumber(fid, 'Thickness', Rsas)
 
     boxes.append(fid)
@@ -541,6 +544,23 @@ def PVS_simulation(args):
 
     # Initialisation : 
     logging.info(title1("Initialisation"))
+
+    # We start at a time shift
+    tshift= -1/4/fi[0] ##todo : modify to be compatible with phii
+    
+
+    # Update boundary conditions
+    for expr in driving_expressions:
+        hasattr(expr, 'tn') and setattr(expr, 'tn', 0)
+        hasattr(expr, 'tnp1') and setattr(expr, 'tnp1', tshift)
+
+    #Solve ALE and move mesh 
+    eta_f = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale,
+                      parameters=ale_parameters)
+    ALE.move(mesh_f, eta_f)
+    mesh_f.bounding_box_tree().build(mesh_f)
+
+
     logging.info("\n * Fluid")
     logging.info("Velocity : zero field")
     logging.info("Pressure : zero field")
@@ -557,7 +577,7 @@ def PVS_simulation(args):
     c_n =  project(c_0,Ct)
 
     # Save initial state
-    tshift= 1/4/fi[0] ##todo : modify to be compatible with phii
+    
     uf_n.rename("uf", "tmp")
     pf_n.rename("pf", "tmp")
     c_n.rename("c", "tmp")
@@ -565,21 +585,29 @@ def PVS_simulation(args):
     pf_out << (pf_n, 0)
     c_out << (c_n, 0)
 
+    # Get the 1 D profiles at umax (to be changed in cyl coordinate)
+    mesh_points=mesh_f.coordinates()                                                      
+    x=mesh_points[:,0]
+    y=mesh_points[:,1]
+    xmin=0
+    xmax=L
+    ymin=min(y)
+    ymax=Rpvs
+                        
+
     files=[csv_p,csv_u,csv_c]
     fields=[pf_n,uf_n.sub(0),c_n]
-    
-    slice_line = line([0,(Rpvs+Rv)/2],[L,(Rpvs+Rv)/2], 100)
+    field_names=['pressure (dyn/cm2)','axial velocity (cm/s)','concentration']
 
-    for csv_file,field in zip(files,fields) :
-        #print the x scale
-        values=np.linspace(0,L,100)
-        row=[0]+list(values)
-        csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
-        #print the initial 1D slice
-        values = line_sample(slice_line, field) 
+    for csv_file,field,name in zip(files,fields,field_names) :
+        #values = line_sample(slice_line, field)
+        values =profile_cyl(field,xmin,xmax,ymin,ymax)
+        logging.info('Max '+name+' : %.2e'%max(abs(values)))
+        #logging.info('Norm '+name+' : %.2e'%field.vector().norm('linf'))
         row=[0]+list(values)
         csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
 
+    csv_rv.write('%e, %e'%(0,ymin))
 
 
     ############# RUN ############3
@@ -665,10 +693,10 @@ def PVS_simulation(args):
             mesh_points=mesh_f.coordinates()                                                      
             x=mesh_points[:,0]
             y=mesh_points[:,1]
-            xmin=min(x)
-            xmax=max(x)
+            xmin=0
+            xmax=L
             ymin=min(y)
-            ymax=max(y)
+            ymax=Rpvs
                         
             #slice_line = line([xmin,(ymin+ymax)/2],[xmax,(ymin+ymax)/2], 100)
 
