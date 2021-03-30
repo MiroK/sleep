@@ -67,8 +67,17 @@ def solve_adv_diff_cyl(W, velocity, mesh_displacement,f, phi_0, bdries, bcs, par
     z, r = SpatialCoordinate(mesh)
 
     phi_0 = interpolate(phi_0, W)
+
+    try:
+        psi0 = TestFunction(phi_0.function_space())
+    except AttributeError:
+        psi0 = TestFunction(W)
+    phi_0 = interpolate(phi_0, W)
+
+    # (inner(phi/dt, psi)*r*dx - inner(phi_0/dt, psi0)*r*dx 
+    #-mesh_velocity
     # Usual backward Euler
-    system = (inner((phi - phi_0)/dt, psi)*r*dx + dot(velocity-mesh_velocity, cyl.GradAxisym(phi))*psi*r*dx +
+    system = (inner((phi - phi_0)/dt, psi)*r*dx + dot(velocity, cyl.GradAxisym(phi))*psi*r*dx +
               kappa*inner(cyl.GradAxisym(phi), cyl.GradAxisym(psi))*r*dx - inner(f, psi)*r*dx)
     
     # SUPG stabilization
@@ -111,6 +120,7 @@ def solve_adv_diff_cyl(W, velocity, mesh_displacement,f, phi_0, bdries, bcs, par
     assembler.assemble(A)
     solver = LUSolver(A, 'mumps')
 
+    timer = Timer('Adv-diff')
     # Temporal integration loop
     T0 = parameters['T0']
     for k in range(parameters['nsteps']):
@@ -124,7 +134,7 @@ def solve_adv_diff_cyl(W, velocity, mesh_displacement,f, phi_0, bdries, bcs, par
         k % 100 == 0 and info('  Adv-Diff at step (%d, %g) |phi_h|=%g' % (k, T0, phi_0.vector().norm('l2')))    
 
         T0 += dt(0)
-        
+    info('  Adv-diff done in %f secs ' % (timer.stop()))  
     return phi_0, T0
 
 
