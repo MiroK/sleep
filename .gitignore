@@ -8,6 +8,9 @@
 *.txt
 *.log
 
+*.png
+*.json
+
 *.msh
 *.h5
 
