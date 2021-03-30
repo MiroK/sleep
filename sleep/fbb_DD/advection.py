@@ -74,10 +74,10 @@ def solve_adv_diff_cyl(W, velocity, mesh_displacement,f, phi_0, bdries, bcs, par
         psi0 = TestFunction(W)
     phi_0 = interpolate(phi_0, W)
 
-    # (inner(phi/dt, psi)*r*dx - inner(phi_0/dt, psi0)*r*dx 
-    #-mesh_velocity
+    #
+    #(inner((phi - phi_0)/dt, psi)*r*dx 
     # Usual backward Euler
-    system = (inner((phi - phi_0)/dt, psi)*r*dx + dot(velocity, cyl.GradAxisym(phi))*psi*r*dx +
+    system = (inner(phi/dt, psi)*r*dx - inner(phi_0/dt, psi0)*r*dx + dot(velocity-mesh_velocity, cyl.GradAxisym(phi))*psi*r*dx +
               kappa*inner(cyl.GradAxisym(phi), cyl.GradAxisym(psi))*r*dx - inner(f, psi)*r*dx)
     
     # SUPG stabilization
