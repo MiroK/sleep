@@ -171,7 +171,7 @@ class EmbeddedMesh(df.Mesh):
             cell_as_vertex = set(vertex_mapping[v] for v in c2v(cell.index()))  # Express cell in parent numbering
             entity_mapping[cell.index()] = tagged_entities[entities_as_vertex.index(cell_as_vertex)]
             
-        assert len(entity_mapping) == set(c.index() for c in df.cells(self))
+        assert entity_mapping.keys() == set(c.index() for c in df.cells(self))
         assert set(tagged_entities) == set(entity_mapping.values())  # Using all of available
 
         self.parent_entity_map[parent_mesh.id()] = {0: vertex_mapping,
