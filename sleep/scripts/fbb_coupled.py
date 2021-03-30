@@ -114,7 +114,7 @@ t1 = sympy.symbols("t1")
 t2 = sympy.symbols("t2")
 sin = sympy.sin
 
-amp=3e-4 #cm
+amp=18e-4 #cm
 f=1 #Hz
 
 functionU = amp*sin(2*pi*f*t1) # displacement

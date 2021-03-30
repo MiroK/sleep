@@ -7,6 +7,7 @@ import dolfin as df
 import numpy as np
 import operator
 
+from IPython import embed
 
 class EmbeddedMesh(df.Mesh):
     '''
@@ -140,56 +141,38 @@ class EmbeddedMesh(df.Mesh):
         e2v = parent_mesh.topology()(tdim, 0)
 
         if isinstance(tags, int): tags = [tags]
-
+        # Index of entities that should be used
         tagged_entities = np.hstack([np.where(other_entity_f.array() == tag)[0] for tag in tags])
         assert len(tagged_entities)
 
-        tree = self.bounding_box_tree()        
-        # Collision by coordinates
-        x, x_parent = self.coordinates(), parent_mesh.coordinates()
+        # Embed vertices and use them to reconstruct cell
+        my_vertices = np.unique(np.hstack([c2v(cell.index()) for cell in df.cells(self)]))
+        parent_vertices = np.unique(np.hstack([e2v(entity) for entity in tagged_entities]))
+        # Sanity check for posibility of complete embedding
+        assert len(my_vertices) == len(parent_vertices)
+        # Brutoforce collision checking
+        my_coordinates = self.coordinates()[my_vertices]
+        parent_coordinates = parent_mesh.coordinates()[parent_vertices]
+        
+        vertex_mapping = {}
+        for ci, cx in zip(my_vertices, my_coordinates):  # Cell
+            ej = np.argmin(np.linalg.norm(parent_coordinates - cx, 2, axis=1))
+            ex = parent_coordinates[ej]
+            assert np.linalg.norm(cx - ex) < tol
+            # Mine to parent
+            vertex_mapping[ci] = parent_vertices[ej]
+        assert vertex_mapping.keys() == set(my_vertices)  # Embedded all my vertices
+        assert set(vertex_mapping.values()) == set(parent_vertices)  # Using all of available
 
-        entity_mapping, vertex_mapping = {}, {}
-        for entity in tagged_entities:
-            # We need to be able to embed all vertices in order to get a cell
-            entity_vertices = e2v(entity).tolist()
-            # First seek self cells that collide with the vertex.
-            v_cells = set(sum((list(tree.compute_collisions(df.Point(x_parent[v])))
-                               for v in entity_vertices), []))
+        entity_mapping = {}
+        # Now pair cells
+        entities_as_vertex = [set(e2v(entity)) for entity in tagged_entities]  # Entities parent numbering 
+        for cell in df.cells(self):
+            cell_as_vertex = set(vertex_mapping[v] for v in c2v(cell.index()))  # Express cell in parent numbering
+            entity_mapping[cell.index()] = tagged_entities[entities_as_vertex.index(cell_as_vertex)]
             
-            emp = np.mean(x_parent[entity_vertices], axis=0)
-            # The one closest by midpoint criterion better embed the entity
-            v_cells = sorted(v_cells,
-                             key = lambda c: np.linalg.norm(emp - np.mean(x[c2v(c)], axis=0)),
-                             reverse=True)
-            
-            found = False
-            distances = defaultdict(list)
-            # Ideally only one pop is needed as the last(v_cells) is the
-            # best match in terms of midpoints. That cell should be able
-            # embed the vertices
-            while v_cells and not found:
-                the_cell = v_cells.pop()
-                cell_vertices = c2v(the_cell)
-                cell_vertices_x = x[cell_vertices]
-                
-                # And now pair the vertices
-                entity_vertices = e2v(entity)
-                entity_vertices_x = x_parent[entity_vertices]
-                # There eventually must exist a permutation of cell vertices that matches
-                # the entity
-                perms = permutations(range(len(cell_vertices)), len(cell_vertices))
-                for perm in map(list, perms):
-                    dist = np.linalg.norm(entity_vertices_x - cell_vertices_x[perm])
-                    found = dist  < tol
-                    # Keep track of geometrical matches for debugging
-                    distances[the_cell].append(dist)
-                    if found: break
-                    
-            assert found, f'Embedding failed {distances}'
-            # Set mappings
-            for ev, cv in zip(entity_vertices, cell_vertices[perm]):
-                vertex_mapping[cv] = ev
-            entity_mapping[the_cell] = entity
+        assert len(entity_mapping) == set(c.index() for c in df.cells(self))
+        assert set(tagged_entities) == set(entity_mapping.values())  # Using all of available
 
         self.parent_entity_map[parent_mesh.id()] = {0: vertex_mapping,
                                                     tdim: entity_mapping}
