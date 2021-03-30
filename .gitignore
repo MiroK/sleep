@@ -6,6 +6,14 @@
 *.pvd
 *.vtu
 
+*.txt
+*.png
+*.json
+*.h5
+*.log
+*.msh
+*.csv
+
 ### vscode ###
 .devcontainer/*
 .vscode/*
