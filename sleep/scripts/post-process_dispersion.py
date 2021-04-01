@@ -10,6 +10,8 @@ import numpy as np
 from math import sqrt, exp, log, pi
 
 import os
+import shutil
+
 
 def fA(t, a, f, phi=0, Rv0=8e-4, h0=2e-4) :
     w=2*np.pi*f
@@ -112,10 +114,10 @@ def estimate_diff_fit(spanC,spanX,t,sigma,L,xi) :
 
 
 file_database='/home/alexandra/Documents/Python/sleep/sleep/output/'
-file_database+='data_dispersion_nrem_limtmax.csv'
+file_database+='data_dispersion_global_limtmaxcorr.csv'
 
 
-study='nrem'
+study='global'
 
 # set a condition on time analysis to stay in 1D in the PVS
 conditiontime=True
@@ -187,6 +189,14 @@ for f in spanf :
             
             if not os.path.exists(outputfolder):
                 os.makedirs(outputfolder)
+                
+            import glob
+            
+            files = glob.glob('outputfolder'+'*')
+            for f in files:
+                os.remove(f)
+            
+            
             
             outputfile = open(outputfolder+'post-process.txt', "w")
             
@@ -316,7 +326,9 @@ for f in spanf :
             
             
             iperiodic=(np.arange(ishift,len(t),int(T/dtoutput)))
+            iperiodicumax=(np.arange(int(T/dtoutput*1/2),len(t),int(T/dtoutput)))
             
+            xiadv=x[np.argmax(concentration[iperiodicumax[0]])]
            
             
             span_FWHM=[]
@@ -351,17 +363,33 @@ for f in spanf :
                     tmax=(L/2)**2/DestFWHM/2
                     
 
-            thetaa=amp*L/(1+amp)/(L/2-2*np.sqrt(2*DestFWHM*t[iperiodic]))
+            thetaa=(xiadv+np.sqrt(2*DestFWHM*t[iperiodic]))/L
+            
+            #amp*L/(L/2-2*np.sqrt(2*DestFWHM*t[iperiodic]))
             
             if conditionalpha :
                 #condition advection diffusion
-                while thetaa[-1]>3 : 
+                while thetaa[-1]>=0.8 : 
                     outputfile.write('\n* warning : limitation of tend due to theta a')
-                    ii=np.where(thetaa>=3)[0][0]
+                    ii=np.where(thetaa>=0.8)[0][0]
+
+                    if ii==0 :
+                        iperiodic=[0]
+                        break
+                    
                     iperiodic=iperiodic[0:ii]
                     Dest=estimate_diff_FWHM_fit(t[iperiodic[::]],span_FWHM[iperiodic[::]])
                     DestFWHM=max(Dest,D)
-                    thetaa=amp*L/(1+amp)/(L/2-2*np.sqrt(2*DestFWHM*t[iperiodic]))
+                    #thetaa=amp*L/(L/2-2*np.sqrt(2*DestFWHM*t[iperiodic]))
+                    thetaa=(xiadv+np.sqrt(2*DestFWHM*t[iperiodic]))/L
+
+            nPeriod=len(iperiodic)-1
+            outputfile.write('\nnumber of period analysed: %i'%nPeriod)
+            
+            if nPeriod==0 :
+                outputfile.write('\nOscillatory dispersion analysis aborted')
+                continue
+            
 
             plt.savefig(outputfolder+'disp_FWHM.png')                 
             
@@ -370,13 +398,7 @@ for f in spanf :
             
             
             
-            nPeriod=len(iperiodic)-1
-            outputfile.write('\nnumber of period analysed: %i'%nPeriod)
-            
-            if nPeriod==0 :
-                outputfile.write('\nOscillatory dispersion analysis aborted')
-                continue
-            
+
             plt.figure()
             plt.plot(t[iperiodic],span_FWHM[iperiodic]*1e4,'*')
             plt.xlabel('time (s)')

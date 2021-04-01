@@ -66,7 +66,7 @@ def solve_adv_diff_cyl(W, velocity, mesh_displacement,f, phi_0, bdries, bcs, par
     # ... however, we are still in 2d
     z, r = SpatialCoordinate(mesh)
 
-    phi_0 = interpolate(phi_0, W)
+   # phi_0 = interpolate(phi_0, W)
 
     try:
         psi0 = TestFunction(phi_0.function_space())
