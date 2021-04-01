@@ -67,6 +67,7 @@ solid_parameters = {'kappa_2': kappa_2, 'kappa_3': kappa_2,
                     'alpha_2': alpha_2, 'alpha_3': alpha_2,
                     's0_2': s0_2, 's0_3': s0_2}  
 
+porosity_n=Constant(0.2)
 
 ### FLUID PARAMETERS
 fluid_parameters = {'mu': 6.97e-3, 'rho': 1}
