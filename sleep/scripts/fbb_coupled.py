@@ -5,6 +5,7 @@ from sleep.fbb_DD.ale import solve_ale
 from sleep.utils import EmbeddedMesh
 from sleep.mesh import load_mesh2d
 from dolfin import *
+import sleep.fbb_DD.cylindrical as cyl
 #########################
 ##load the mesh
 h5_filename = '../mesh/test/fbb_domain.h5'
@@ -68,6 +69,7 @@ solid_parameters = {'kappa_2': kappa_2, 'kappa_3': kappa_2,
                     's0_2': s0_2, 's0_3': s0_2}  
 
 porosity_n=Constant(0.2)
+
 
 ### FLUID PARAMETERS
 fluid_parameters = {'mu': 6.97e-3, 'rho': 1}
@@ -160,6 +162,7 @@ tractions_iface = Function(VectorFunctionSpace(mesh_s, 'DG', 1))  # FIXME: DG0? 
 # For ALE we will cary the displacement to fluid domain
 etaf_iface = Function(VectorFunctionSpace(mesh_f, 'CG', 2))
 
+
 ######
 
 
@@ -229,6 +232,11 @@ interface = (fluid_bdries, solid_bdries, iface_tag)
 Va_s = VectorFunctionSpace(mesh_s, 'CG', 1)
 
 
+# Porosity variable 
+porosity =FunctionSpace(mesh_s, 'CG', 1)
+
+
+
 
 # Splitting loop
 fluid_parameters['dt'] = 1E-3  # FIXME
@@ -271,6 +279,17 @@ while time < tfinal:
 
     eta_s, u_s, p_s = solve_solid(Ws, f1=Constant((0, 0)), f2=Constant(0), eta_0=eta_s00, p_0=p_s0,
                                             bdries=solid_bdries, bcs=bcs_solid, parameters=solid_parameters)
+
+    # Compute the porosity in the Biot domain
+
+    # Extend solid deformation to 3D
+    deformation = as_vector((eta_s[0],
+                             eta_s[1],
+                             Constant(0)))
+
+    porosity_n=project(porosity_n+solid_parameters['alpha']*cyl.DivAxisym(deformation)+solid_parameters['s0']*(p_s-p_s0),porosity)
+
+
 
     # Impose the velocity in the fluid, given dU/dt of the interface and the percolation velocity at last time steps  
     transfer_into(velocity_f_iface, eta_s/Constant(dt) + u_s, interface)
