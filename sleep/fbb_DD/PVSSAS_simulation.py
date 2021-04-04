@@ -259,17 +259,11 @@ def PVS_simulation(args):
 
     model = gmsh.model
 
-    ## WE START at t=0.25 cycle, ie when Rv=Rmin
     import math
     Apvs0=math.pi*Rpvs**2
     Av0=math.pi*Rv**2
     A0=Apvs0-Av0
-    #Amax=A0*(1+ai[0]) #todo : modify to be compatible with several ai
-    #Amin=A0*(1-ai[0]) #todo : modify to be compatible with several ai
-    #Avmin=Apvs0-Amax
-    #Avmax=Apvs0-Amin
-    #Rvmin=math.sqrt(Avmin/math.pi)
-    #Rvmax=math.sqrt(Avmax/math.pi)
+
 
     # progressive mesh 
     factory = model.occ
