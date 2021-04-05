@@ -19,7 +19,7 @@ import ulfy  # https://github.com/MiroK/ulfy
 # is solved on FE space W
 
 
-def solve_fluid_cyl(W, u_0, f, bdries, bcs, parameters):
+def solve_fluid_cyl(W, u_n,p_n, f, bdries, bcs, parameters):
     '''Return velocity and pressure'''
     info('Solving Stokes for %d unknowns' % W.dim())
     mesh = W.mesh()
@@ -57,7 +57,7 @@ def solve_fluid_cyl(W, u_0, f, bdries, bcs, parameters):
     assert len(u.ufl_shape) == 1 and len(p.ufl_shape) == 0
 
     wh_0 = Function(W)
-    assign(wh_0.sub(0), interpolate(u_0, W.sub(0).collapse()))
+    assign(wh_0.sub(0), interpolate(u_n, W.sub(0).collapse()))
     
     u_0, p_0 = split(wh_0)
     # All but bc terms
@@ -115,7 +115,7 @@ def solve_fluid_cyl(W, u_0, f, bdries, bcs, parameters):
     return u_0, p_0, T0
 
 
-def solve_fluid(W, u_0, f, bdries, bcs, parameters):
+def solve_fluid(W, u_n,p_n, f,  bdries, bcs, parameters):
     '''Return velocity and pressure'''
     info('Solving Stokes for %d unknowns' % W.dim())
     mesh = W.mesh()
@@ -143,9 +143,9 @@ def solve_fluid(W, u_0, f, bdries, bcs, parameters):
     assert needed == reduce(operator.or_, tags)
 
     # Things, which we might want to update in the time loop
-    bdry_expressions = sum(([item[1] for item in bc]
-                            for bc in (velocity_bcs, traction_bcs, pressure_tags)),
-                           [])
+    #bdry_expressions = sum(([item[1] for item in bc]
+    #                        for bc in (velocity_bcs, traction_bcs, pressure_tags)),
+    #                       [])
 
     u, p = TrialFunctions(W)
     v, q = TestFunctions(W)
@@ -153,7 +153,7 @@ def solve_fluid(W, u_0, f, bdries, bcs, parameters):
     assert len(u.ufl_shape) == 1 and len(p.ufl_shape) == 0
 
     wh_0 = Function(W)
-    assign(wh_0.sub(0), interpolate(u_0, W.sub(0).collapse()))
+    assign(wh_0.sub(0), interpolate(u_n, W.sub(0).collapse()))
     
     u_0, p_0 = split(wh_0)
     # All but bc terms
@@ -191,12 +191,14 @@ def solve_fluid(W, u_0, f, bdries, bcs, parameters):
     solver = LUSolver(A, 'mumps')
 
     # Temporal integration loop
-    T0 = parameters['T0']
+    #T0 = parameters['T0']
+    T0=0
+    parameters['nsteps']=1
     for k in range(parameters['nsteps']):
         # Update source if possible
-        for foo in bdry_expressions + [f]:
-            hasattr(foo, 't') and setattr(foo, 't', T0)
-            hasattr(foo, 'time') and setattr(foo, 'time', T0)
+        #for foo in bdry_expressions + [f]:
+        #    hasattr(foo, 't') and setattr(foo, 't', T0)
+        #    hasattr(foo, 'time') and setattr(foo, 'time', T0)
 
         assembler.assemble(b)
         solver.solve(wh_0.vector(), b)
@@ -206,7 +208,8 @@ def solve_fluid(W, u_0, f, bdries, bcs, parameters):
 
     u_0, p_0 = wh_0.split(deepcopy='True')
         
-    return u_0, p_0, T0
+    # I remove T0 for now and force 1 step
+    return u_0, p_0
 
 
 
