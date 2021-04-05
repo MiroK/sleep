@@ -52,8 +52,8 @@ def solve_adv_diff_cyl(W, velocity,phi, f, c_0, phi_0, bdries, bcs, parameters):
     c, psi = TrialFunction(W), TestFunction(W)
     assert psi.ufl_shape == (), psi.ufl_shape
 
-    kappa = Constant(parameters['kappa'])
-    tortuosity=Constant(parameters['tortuosity'])
+    kappa = parameters['kappa']
+
     dt = Constant(parameters['dt'])
 
     # Extend velocity to 3d as GradAxisym(scalar) is 3-vector
@@ -64,11 +64,11 @@ def solve_adv_diff_cyl(W, velocity,phi, f, c_0, phi_0, bdries, bcs, parameters):
     z, r = SpatialCoordinate(mesh)
 
     c_0 = interpolate(c_0, W)
-    phi_0=interpolate(phi_0, W)
+
 
     # Usual backward Euler
     system = (inner((phi*c - phi_0*c_0)/dt, psi)*r*dx + dot(velocity, cyl.GradAxisym(c))*psi*r*dx +
-              inner(kappa*tortuosity*phi*cyl.GradAxisym(c), cyl.GradAxisym(psi))*r*dx - inner(f, psi)*r*dx)
+              inner(kappa*phi*cyl.GradAxisym(c), cyl.GradAxisym(psi))*r*dx - inner(f, psi)*r*dx)
     
     # SUPG stabilization
     if parameters.get('supg', False):
@@ -128,7 +128,7 @@ def solve_adv_diff_cyl(W, velocity,phi, f, c_0, phi_0, bdries, bcs, parameters):
     return c_0, T0
 
 
-def solve_adv_diff(W, velocity, f, c_0, bdries, bcs, parameters):
+def solve_adv_diff(W, velocity,phi, f, c_0, phi_0, bdries, bcs, parameters):
     '''Return concentration field'''
     info('Solving advection-diffusion for %d unknowns' % W.dim())
     assert W.ufl_element().family() == 'Lagrange'
@@ -163,14 +163,16 @@ def solve_adv_diff(W, velocity, f, c_0, bdries, bcs, parameters):
     c, psi = TrialFunction(W), TestFunction(W)
     assert psi.ufl_shape == (), psi.ufl_shape
 
-    kappa = Constant(parameters['kappa'])
+    kappa = parameters['kappa']
 
     dt = Constant(parameters['dt'])
 
     c_0 = interpolate(c_0, W)
+
+
     # Usual backward Euler
-    system = (inner((c - c_0)/dt, psi)*dx + dot(velocity, grad(c))*psi*dx +
-              kappa*inner(grad(c), grad(psi))*dx - inner(f, psi)*dx)
+    system = (inner((phi*c - phi_0*c_0)/dt, psi)*dx + dot(velocity, grad(c))*psi*dx +
+              kappa*phi*inner(grad(c), grad(psi))*dx - inner(f, psi)*dx)
     
     # SUPG stabilization
     if parameters.get('supg', False):
