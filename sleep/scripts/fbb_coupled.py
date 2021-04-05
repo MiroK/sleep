@@ -1,6 +1,6 @@
 from sleep.fbb_DD.domain_transfer import transfer_into
 from sleep.fbb_DD.solid2 import solve_solid
-from sleep.fbb_DD.fluid_NS import solve_fluid
+from sleep.fbb_DD.fluid import solve_fluid
 from sleep.fbb_DD.ale import solve_ale
 from sleep.utils import EmbeddedMesh
 from sleep.mesh import load_mesh2d
@@ -168,8 +168,9 @@ etaf_iface = Function(VectorFunctionSpace(mesh_f, 'CG', 2))
 
 # Now we wire up
 bcs_fluid = {'velocity': [(facet_lookup['F_bottom'], uf_bottom), # No-gap condition on imposed displacement
-                          (facet_lookup['I_bottom'], velocity_f_iface)], # Velocity imposed at the interface
-            'velocity_x': [(facet_lookup['F_right'], Constant(0))],
+                          (facet_lookup['I_bottom'], velocity_f_iface),
+                          (facet_lookup['F_right'], Constant((0,0)))], # Velocity imposed at the interface
+#            'velocity_x': [],
              'traction': [],  
              'pressure': [(facet_lookup['F_left'], pSAS)]}
 
