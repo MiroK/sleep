@@ -10,7 +10,7 @@ from math import pi
 from sleep.fbb_DD.domain_transfer import transfer_into
 from sleep.fbb_DD.advection import solve_adv_diff as solve_adv_diff
 #from sleep.fbb_DD.fluid import solve_fluid as solve_fluid
-from sleep.fbb_DD.fluid_NS import solve_fluid
+from sleep.fbb_DD.fluid import solve_fluid
 #import sleep.fbb_DD.cylindrical as cyl
 #todo : cylindrical for solid
 from sleep.fbb_DD.solid2 import solve_solid
@@ -527,10 +527,14 @@ def PVSbrain_simulation(args):
             #return (2,)
             return ()
 
-    mask_solid = function_subdomains(subdomains, 0, 1, degree=0)
-    mask_fluid = function_subdomains(subdomains, 1, 0, degree=0)
+    is_solid = function_subdomains(subdomains, 0, 1, degree=0)
+    is_fluid = function_subdomains(subdomains, 1, 0, degree=0)
+
+    maskspace=FunctionSpace(mesh, 'DG', 0)
 
 
+    mask_solid=project(is_solid,maskspace)
+    mask_fluid=project(is_fluid,maskspace)
 
     # define the domain specific parameters for the tracer
     # NOTE: Here we do P0 projection
@@ -592,7 +596,7 @@ def PVSbrain_simulation(args):
 
     # CHECK here
     # Should I take  VectorElement / Finite elements or VectorFunctionSpace/FunctionSpace with 'CG',1 ?
-    FS_advvel= VectorFunctionSpace(mesh, 'CG', 1)
+    FS_advvel= VectorFunctionSpace(mesh, 'CG', 2)
     #advvel_elt=VectorElement('Lagrange', triangle, 2)
     #FS_advvel = FunctionSpace(mesh, advvel_elt)
 
@@ -806,7 +810,7 @@ def PVSbrain_simulation(args):
 
     #Initial deformation of the fluid domain
     # We start at a time shift
-    tshift= 1/4/fi[0] 
+    tshift=  1/4/fi[0] 
 
     # Update boundary conditions
     for expr in driving_expressions:
@@ -831,7 +835,7 @@ def PVSbrain_simulation(args):
 
     #CHECK : This takes a lot of time !  I dont know if it is needed for the mask function to work properly
     mesh.bounding_box_tree().build(mesh) 
-    #mesh_f.bounding_box_tree().build(mesh_f)
+    mesh_f.bounding_box_tree().build(mesh_f)
 
 
     # Save initial state
@@ -923,17 +927,19 @@ def PVSbrain_simulation(args):
         etas_n.set_allow_extrapolation(True)
         etaf_n.set_allow_extrapolation(True)
 
+
         #CHECK project or asign ?
         eta_n=project(mask_solid*etas_n+mask_fluid*etaf_n,Va_full)
 
+        #This is quite long
         ALE.move(mesh, eta_n)
         ALE.move(mesh_f, etaf_n)
         ALE.move(mesh_s, interpolate(etas_n, Va_s))
 
-        #CHECK : This takes a lot of time !  I dont know if it is needed for the mask function to work properly
+        #is needed for the masks
         mesh.bounding_box_tree().build(mesh) 
-        #mesh_f.bounding_box_tree().build(mesh_f)
-        #mesh_s.bounding_box_tree().build(mesh_s)
+        mesh_f.bounding_box_tree().build(mesh_f)
+        mesh_s.bounding_box_tree().build(mesh_s)
 
 
 
@@ -951,7 +957,7 @@ def PVSbrain_simulation(args):
         transfer_into(p_interface, pf_, boundaries)   
 
         # and normal stress from fluid domain
-        
+        # CHECK update n_f ? after ALE
         transfer_into(traction_interface,-dot(sigma_f(uf_, pf_), n_f),boundaries) 
 
 
@@ -1033,35 +1039,35 @@ def PVSbrain_simulation(args):
             advection_velocity.rename("adv_vel", "tmp")
             File(outputfolder+'fields'+'/adv_vel.pvd') << (advection_velocity, time-tshift)
 
-            # Get the 1 D profiles at umax (to be changed in cyl coordinate)
-            mesh_points=mesh_f.coordinates()                                                      
-            x=mesh_points[:,0]
-            y=mesh_points[:,1]
-            xmin=min(x)
-            xmax=max(x)
-            ymin=min(y)
-            ymax=max(y)
+            ## Get the 1 D profiles at umax (to be changed in cyl coordinate)
+            #mesh_points=mesh_f.coordinates()                                                      
+            #x=mesh_points[:,0]
+            #y=mesh_points[:,1]
+            #xmin=min(x)
+            #xmax=max(x)
+            #ymin=min(y)
+            #ymax=max(y)
                         
             #slice_line = line([xmin,(ymin+ymax)/2],[xmax,(ymin+ymax)/2], 100)
 
-            logging.info('Rpvs : %e'%ymax)
-            logging.info('Rvn : %e'%ymin)
+            #logging.info('Rpvs : %e'%ymax)
+            #logging.info('Rvn : %e'%ymin)
 
-            files=[csv_p,csv_u,csv_c]
-            fields=[pf_n,uf_n.sub(0),c_n]
-            field_names=['pressure (dyn/cm2)','axial velocity (cm/s)','concentration']
+            #files=[csv_p,csv_u,csv_c]
+            #fields=[pf_n,uf_n.sub(0),c_n]
+            #field_names=['pressure (dyn/cm2)','axial velocity (cm/s)','concentration']
 
-            #todo : correct here the y integration (the interval changes with x due to deformations of the brain)
-            #need to CHECK : impose that the brain interface deform only along y ?
-            for csv_file,field,name in zip(files,fields,field_names) :
-                #values = line_sample(slice_line, field)
-                values =profile_cyl(field,xmin,xmax,ymin,ymax)
-                logging.info('Max '+name+' : %.2e'%max(abs(values)))
-                #logging.info('Norm '+name+' : %.2e'%field.vector().norm('linf'))
-                row=[time-tshift]+list(values)
-                csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
+            ##todo : correct here the y integration (the interval changes with x due to deformations of the brain)
+            ##need to CHECK : impose that the brain interface deform only along y ?
+            #for csv_file,field,name in zip(files,fields,field_names) :
+            #    #values = line_sample(slice_line, field)
+            #    values =profile_cyl(field,xmin,xmax,ymin,ymax)
+            #    logging.info('Max '+name+' : %.2e'%max(abs(values)))
+            #    #logging.info('Norm '+name+' : %.2e'%field.vector().norm('linf'))
+            #    row=[time-tshift]+list(values)
+            #    csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
 
-            csv_rv.write('%e, %e'%(time-tshift,ymin))
+            #csv_rv.write('%e, %e'%(time-tshift,ymin))
 
 
 
@@ -1090,7 +1096,7 @@ if __name__ == '__main__':
     my_parser.add_argument('-rpvs','--radius_pvs',
                         metavar='Rpvs',
                         type=float,
-                        default=10.5e-4,
+                        default=11e-4,
                         help='PVS outer radius as rest')
 
     my_parser.add_argument('-rbrain','--radius_brain',
@@ -1106,13 +1112,13 @@ if __name__ == '__main__':
     my_parser.add_argument('-ai',
                         type=float,
                         nargs='+',
-                        default=[0.01],
+                        default=[0.2],
                         help='List of ai')
 
     my_parser.add_argument('-fi',
                         type=float,
                         nargs='+',
-                        default=[10],
+                        default=[0.2],
                         help='List of fi')
 
 
@@ -1124,17 +1130,17 @@ if __name__ == '__main__':
 
     my_parser.add_argument('-tend',
                         type=float,
-                        default=100e-3,
+                        default=5,
                         help='final time')
 
     my_parser.add_argument('-toutput',
                         type=float,
-                        default=1e-3,
+                        default=5e-2,
                         help='output period')                       
 
     my_parser.add_argument('-dt','--time_step',
                         type=float,
-                        default=1e-3,
+                        default=1e-2,
                         help='time step')
 
     my_parser.add_argument('-mu','--viscosity',
@@ -1174,7 +1180,7 @@ if __name__ == '__main__':
 
     my_parser.add_argument('-nl','--N_axial',
                         type=int,
-                        default=100,
+                        default=50,
                         help='number of cells in the axial direction')
 
     my_parser.add_argument('-d','--diffusion_coef',
@@ -1199,7 +1205,7 @@ if __name__ == '__main__':
 
     my_parser.add_argument('-E','--biot_youngmodulus',
                         type=float,
-                        default=1000e3,
+                        default=5000e3,
                         help='Young modulus in the Biot domain (dyn/cm2)')
 
     my_parser.add_argument('-nu','--biot_poisson',
