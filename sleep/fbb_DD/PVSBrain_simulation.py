@@ -318,7 +318,7 @@ def PVSbrain_simulation(args):
         def deform_mesh(x, y):
             transform_fluid=Rv + (Rpvs-Rv)*y
             transform_solid=Rpvs + (Rbrain-Rpvs)*((y-1)/(Rext-1))**s_biot
-            yp=np.where(y < 1, transform_fluid, transform_solid)
+            yp=np.where(y <= 1, transform_fluid, transform_solid)
             return [x, yp]
 
         x_bar, y_bar = deform_mesh(x, y)
@@ -384,6 +384,8 @@ def PVSbrain_simulation(args):
         boxes = []
         # add box on the PVS for mesh
         field = model.mesh.field
+
+
         fid = 1
         field.add('Box', fid)
         field.setNumber(fid, 'XMin', 0)
@@ -392,14 +394,18 @@ def PVSbrain_simulation(args):
         field.setNumber(fid, 'YMax', Rpvs)
         field.setNumber(fid, 'VIn', cell_size)
         field.setNumber(fid, 'VOut', DR*50 )
-        field.setNumber(fid, 'Thickness', (Rpvs-Rv))
+        field.setNumber(fid, 'Thickness', (Rpvs-Rv)/4)
 
         boxes.append(fid)
+
+
+
+
         
         # Combine
-        field.add('Min', 2)
-        field.setNumbers(2, 'FieldsList', boxes)    
-        field.setAsBackgroundMesh(2)
+        field.add('Min', fid+1)
+        field.setNumbers(fid+1, 'FieldsList', boxes)    
+        field.setAsBackgroundMesh(fid+1)
 
         model.occ.synchronize()
 
@@ -413,15 +419,20 @@ def PVSbrain_simulation(args):
 
     ## Define subdomains
 
-    tol=1e-5 #cm
+    x = mesh.coordinates()[:,0]
+    y = mesh.coordinates()[:,1]
+
+
+    tol=1e-7
+
 
     class Omega_0(SubDomain):
         def inside(self, x, on_boundary):
-            return x[1] <= Rpvs + tol
+            return x[1] < Rpvs + tol
 
     class Omega_1(SubDomain):
         def inside(self, x, on_boundary):
-            return x[1] >= Rpvs - tol
+            return x[1] > Rpvs - tol
 
     subdomains = MeshFunction("size_t", mesh, mesh.topology().dim(),0)
 
@@ -510,35 +521,30 @@ def PVSbrain_simulation(args):
 
     facets_out_solid << solid_bdries
 
-    #Mask functions for the subdomains
-    class function_subdomains(UserExpression):
-        def __init__(self, materials, k_0, k_1, **kwargs):
-            super().__init__(**kwargs) # This part is new!
-            self.materials = materials
-            self.k_0 = k_0
-            self.k_1 = k_1
+    ##Mask functions for the subdomains
+    #class function_subdomains(UserExpression):
+    #    def __init__(self, materials, k_0, k_1, **kwargs):
+    #        super().__init__(**kwargs) # This part is new!
+    #        self.materials = materials
+    #        self.k_0 = k_0
+    #        self.k_1 = k_1
 
-        def eval_cell(self, values, x, cell):
-            if self.materials[cell.index] == 0:
-                values[0] = self.k_0
-            else:
-                values[0] = self.k_1
-        def value_shape(self):
-            #return (2,)
-            return ()
+    #    def eval_cell(self, values, x, cell):
+    #        if self.materials[cell.index] == 0:
+    #            values[0] = self.k_0
+    #        else:
+    #            values[0] = self.k_1
+    #    def value_shape(self):
+    #        #return (2,)
+    #        return ()
 
-    is_solid = function_subdomains(subdomains, 0, 1, degree=0)
-    is_fluid = function_subdomains(subdomains, 1, 0, degree=0)
+    #is_solid = function_subdomains(subdomains, 0, 1, degree=0)
+    #is_fluid = function_subdomains(subdomains, 1, 0, degree=0)
 
-    maskspace=FunctionSpace(mesh, 'DG', 0)
-
-
-    mask_solid=project(is_solid,maskspace)
-    mask_fluid=project(is_fluid,maskspace)
 
     # define the domain specific parameters for the tracer
     # NOTE: Here we do P0 projection
-    dx = Measure('dx', domain=mesh)
+    dx = Measure('dx', domain=mesh, subdomain_data=subdomains)
     CoefSpace = FunctionSpace(mesh, 'DG', 0)
     q = TestFunction(CoefSpace)
 
@@ -548,12 +554,27 @@ def PVSbrain_simulation(args):
     fluid_coef = tracer_parameters.pop('%s_0' % coef)
     solid_coef = tracer_parameters.pop('%s_1' % coef)
 
-    form = ((1/CellVolume(mesh))*fluid_coef*mask_fluid*q*dx(0) +
-                (1/CellVolume(mesh))*solid_coef*mask_solid*q*dx(1))
+    form = ((1/CellVolume(mesh))*fluid_coef*q*dx(0) +
+                (1/CellVolume(mesh))*solid_coef*q*dx(1))
         
     tracer_parameters[coef] = Function(CoefSpace, assemble(form))
 
 
+    # masks
+    maskspace=FunctionSpace(mesh, 'DG', 0)
+    q = TestFunction(maskspace)
+
+    form = ((1/CellVolume(mesh))*Constant(0)*q*dx(0) +
+                (1/CellVolume(mesh))*Constant(1)*q*dx(1))
+                
+    mask_solid=Function(CoefSpace, assemble(form))
+
+    form = ((1/CellVolume(mesh))*Constant(1)*q*dx(0) +
+                (1/CellVolume(mesh))*Constant(0)*q*dx(1))   
+
+    mask_fluid=Function(maskspace, assemble(form))
+
+    File(outputfolder+'fields'+'/mask_fluid.pvd') << mask_fluid
  
     #FEM space
 
@@ -595,15 +616,15 @@ def PVSbrain_simulation(args):
     Va_full = VectorFunctionSpace(mesh, 'CG', 1)
 
     # CHECK here
-    # Should I take  VectorElement / Finite elements or VectorFunctionSpace/FunctionSpace with 'CG',1 ?
+    # Should I take  VectorElement / Finite elements or VectorFunctionSpace/FunctionSpace with 'CG',1 , 2?
     FS_advvel= VectorFunctionSpace(mesh, 'CG', 2)
     #advvel_elt=VectorElement('Lagrange', triangle, 2)
     #FS_advvel = FunctionSpace(mesh, advvel_elt)
 
 
     # Porosity variables 
-    FS_porosity= FunctionSpace(mesh, 'CG', 1)
-    FS_porositys= FunctionSpace(mesh_s, 'CG', 1)
+    FS_porosity= FunctionSpace(mesh, 'DG', 1)
+    FS_porositys= FunctionSpace(mesh_s, 'DG', 1)
 
     #porosity_elm = FiniteElement('Lagrange', triangle, 1)
     #FS_porosity = FunctionSpace(mesh, porosity_elm)
@@ -797,10 +818,24 @@ def PVSbrain_simulation(args):
     logging.info("                Centered at mid length")
     logging.info("                STD parameter = %e"%sigma_gauss)
 
+    mesh.bounding_box_tree().build(mesh) 
 
-    cf_0 = Expression('exp(-a*pow(x[0]-b, 2)) ', degree=1, a=1/2/sigma_gauss**2, b=xi_gauss)
+    cf_0 = Expression('exp(-a*pow(x[0]-b, 2)) ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss)
 
-    c_n =  project(mask_fluid*cf_0,Ct)
+    c_n =  project(mask_fluid*cf_0,Ct)#
+
+    
+ 
+    #class InitialCondition(UserExpression):
+    #    def eval_cell(self, value, x, ufc_cell):
+    #        if x[1] < Rpvs:
+    #            value[0] = cf_0(x)
+    #        else:
+    #            value[0] = 0.0
+    #c_n=Function(Ct)
+    #c_n.interpolate(InitialCondition())
+
+
 
     porositys_n=project(Constant(porosity_0),FS_porositys)
 
@@ -808,9 +843,11 @@ def PVSbrain_simulation(args):
 
 
 
+
+
     #Initial deformation of the fluid domain
     # We start at a time shift
-    tshift=  1/4/fi[0] 
+    tshift=0 #  1/4/fi[0] 
 
     # Update boundary conditions
     for expr in driving_expressions:
@@ -833,7 +870,7 @@ def PVSbrain_simulation(args):
     ALE.move(mesh, eta_n)
     ALE.move(mesh_f, etaf_n)
 
-    #CHECK : This takes a lot of time !  I dont know if it is needed for the mask function to work properly
+    #it is needed for the mask function to work properly
     mesh.bounding_box_tree().build(mesh) 
     mesh_f.bounding_box_tree().build(mesh_f)
 
@@ -867,7 +904,7 @@ def PVSbrain_simulation(args):
 
     #todo add header for the cvs files
 
-    #todo : do the integrate here
+    #todo : do the cross section integrate here
 
     for csv_file,field in zip(files,fields) :
         #print the x scale
@@ -1112,7 +1149,7 @@ if __name__ == '__main__':
     my_parser.add_argument('-ai',
                         type=float,
                         nargs='+',
-                        default=[0.2],
+                        default=[0.1],
                         help='List of ai')
 
     my_parser.add_argument('-fi',
@@ -1174,13 +1211,13 @@ if __name__ == '__main__':
                         help='number of cells in the radial direction in the biot domain')
 
     my_parser.add_argument('-s_biot','--biot_progression',
-                        type=int,
+                        type=float,
                         default=2.5,
                         help='progression coefficient for the mesh in the biot domain')
 
     my_parser.add_argument('-nl','--N_axial',
                         type=int,
-                        default=50,
+                        default=100,
                         help='number of cells in the axial direction')
 
     my_parser.add_argument('-d','--diffusion_coef',
@@ -1190,7 +1227,7 @@ if __name__ == '__main__':
 
     my_parser.add_argument('-s','--sigma',
                         type=float,
-                        default=1e-4,
+                        default=4e-4,
                         help='STD gaussian init for concentration')
 
     my_parser.add_argument('-xi','--initial_pos',
