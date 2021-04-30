@@ -9,15 +9,15 @@ import ulfy  # https://github.com/MiroK/ulfy
 
 # Problem
 # 
-# - d phi / dt + v.grad(phi) - kappa*Delta(phi) = f
+# - d c / dt + v.grad(c) - kappa*Delta(c) = f
 #
 # with following bcs:
-# 1) concentration (Dirichlet): phi = gD
-# 2) flux (Neumann): kappa*dot(grad(phi), n) = gN
+# 1) concentration (Dirichlet): c = gD
+# 2) flux (Neumann): kappa*dot(grad(c), n) = gN
 #
 # is solved on FE space W
 
-def solve_adv_diff_cyl(W, velocity, f, phi_0, bdries, bcs, parameters):
+def solve_adv_diff_cyl(W, velocity,phi, f, c_0, phi_0, bdries, bcs, parameters):
     '''Return concentration field'''
     info('Solving advection-diffusion for %d unknowns' % W.dim())
     assert W.ufl_element().family() == 'Lagrange'
@@ -49,10 +49,11 @@ def solve_adv_diff_cyl(W, velocity, f, phi_0, bdries, bcs, parameters):
                             for bc in (dirichlet_bcs, neumann_bcs)),
                            [])
     
-    phi, psi = TrialFunction(W), TestFunction(W)
+    c, psi = TrialFunction(W), TestFunction(W)
     assert psi.ufl_shape == (), psi.ufl_shape
 
-    kappa = Constant(parameters['kappa'])
+    kappa = parameters['kappa']
+
     dt = Constant(parameters['dt'])
 
     # Extend velocity to 3d as GradAxisym(scalar) is 3-vector
@@ -62,10 +63,12 @@ def solve_adv_diff_cyl(W, velocity, f, phi_0, bdries, bcs, parameters):
     # ... however, we are still in 2d
     z, r = SpatialCoordinate(mesh)
 
-    phi_0 = interpolate(phi_0, W)
+    c_0 = interpolate(c_0, W)
+
+
     # Usual backward Euler
-    system = (inner((phi - phi_0)/dt, psi)*r*dx + dot(velocity, cyl.GradAxisym(phi))*psi*r*dx +
-              kappa*inner(cyl.GradAxisym(phi), cyl.GradAxisym(psi))*r*dx - inner(f, psi)*r*dx)
+    system = (inner((phi*c - phi_0*c_0)/dt, psi)*r*dx + dot(velocity, cyl.GradAxisym(c))*psi*r*dx +
+              inner(kappa*phi*cyl.GradAxisym(c), cyl.GradAxisym(psi))*r*dx - inner(f, psi)*r*dx)
     
     # SUPG stabilization
     if parameters.get('supg', False):
@@ -76,8 +79,9 @@ def solve_adv_diff_cyl(W, velocity, f, phi_0, bdries, bcs, parameters):
         # See https://www.hindawi.com/journals/jam/2018/4259634/ for stab.
         stab = 1/(4*kappa/h/h + 2*mag/h)
 
-        # Test the residuum againt         
-        system += stab*inner(((1/dt)*(phi - phi_0) - kappa*div(cyl.GradAxisym(phi)) + dot(velocity, cyl.GradAxisym(phi))) - f,
+        # Test the residuum againt        
+        # Correct with porosity phi ? 
+        system += stab*inner(((1/dt)*(phi*c - phi_0*c_0) - kappa*tortuosity*phi*div(cyl.GradAxisym(c)) + dot(velocity, cyl.GradAxisym(c))) - f,
                              dot(velocity, cyl.GradAxisym(psi)))*r*dx(degree=10)
 
     # Handle natural bcs
@@ -116,15 +120,15 @@ def solve_adv_diff_cyl(W, velocity, f, phi_0, bdries, bcs, parameters):
             hasattr(foo, 'time') and setattr(foo, 'time', T0)
 
         assembler.assemble(b)
-        solver.solve(phi_0.vector(), b)
-        k % 100 == 0 and info('  Adv-Diff at step (%d, %g) |phi_h|=%g' % (k, T0, phi_0.vector().norm('l2')))    
+        solver.solve(c_0.vector(), b)
+        k % 100 == 0 and info('  Adv-Diff at step (%d, %g) |c_h|=%g' % (k, T0, c_0.vector().norm('l2')))    
 
         T0 += dt(0)
         
-    return phi_0, T0
+    return c_0, T0
 
 
-def solve_adv_diff(W, velocity, f, phi_0, bdries, bcs, parameters):
+def solve_adv_diff(W, velocity,phi, f, c_0, phi_0, bdries, bcs, parameters):
     '''Return concentration field'''
     info('Solving advection-diffusion for %d unknowns' % W.dim())
     assert W.ufl_element().family() == 'Lagrange'
@@ -156,17 +160,19 @@ def solve_adv_diff(W, velocity, f, phi_0, bdries, bcs, parameters):
                             for bc in (dirichlet_bcs, neumann_bcs)),
                            [])
     
-    phi, psi = TrialFunction(W), TestFunction(W)
+    c, psi = TrialFunction(W), TestFunction(W)
     assert psi.ufl_shape == (), psi.ufl_shape
 
-    kappa = Constant(parameters['kappa'])
+    kappa = parameters['kappa']
 
     dt = Constant(parameters['dt'])
 
-    phi_0 = interpolate(phi_0, W)
+    c_0 = interpolate(c_0, W)
+
+
     # Usual backward Euler
-    system = (inner((phi - phi_0)/dt, psi)*dx + dot(velocity, grad(phi))*psi*dx +
-              kappa*inner(grad(phi), grad(psi))*dx - inner(f, psi)*dx)
+    system = (inner((phi*c - phi_0*c_0)/dt, psi)*dx + dot(velocity, grad(c))*psi*dx +
+              kappa*phi*inner(grad(c), grad(psi))*dx - inner(f, psi)*dx)
     
     # SUPG stabilization
     if parameters.get('supg', False):
@@ -178,7 +184,7 @@ def solve_adv_diff(W, velocity, f, phi_0, bdries, bcs, parameters):
         stab = 1/(4*kappa/h/h + 2*mag/h)
 
         # Test the residuum againt         
-        system += stab*inner(((1/dt)*(phi - phi_0) - kappa*div(grad(phi)) + dot(velocity, grad(phi))) - f,
+        system += stab*inner(((1/dt)*(c - c_0) - kappa*div(grad(c)) + dot(velocity, grad(c))) - f,
                              dot(velocity, grad(psi)))*dx(degree=10)
 
     # Handle natural bcs
@@ -216,12 +222,12 @@ def solve_adv_diff(W, velocity, f, phi_0, bdries, bcs, parameters):
             hasattr(foo, 'time') and setattr(foo, 'time', T0)
 
         assembler.assemble(b)
-        solver.solve(phi_0.vector(), b)
-        k % 100 == 0 and info('  Adv-Diff at step (%d, %g) |phi_h|=%g' % (k, T0, phi_0.vector().norm('l2')))    
+        solver.solve(c_0.vector(), b)
+        k % 100 == 0 and info('  Adv-Diff at step (%d, %g) |c_h|=%g' % (k, T0, c_0.vector().norm('l2')))    
 
         T0 += dt(0)
         
-    return phi_0, T0
+    return c_0, T0
 
 
 def mms_ad(kappa_value):
@@ -235,11 +241,11 @@ def mms_ad(kappa_value):
     W = VectorFunctionSpace(mesh, 'CG', 1)
     velocity = Function(W)
 
-    phi = Function(V)
+    c = Function(V)
     # foo*exp(1-alpha*time) so that d / dt gives us -alpha*foo
-    f = -alpha*phi + dot(velocity, grad(phi)) - kappa*div(grad(phi))
+    f = -alpha*c + dot(velocity, grad(c)) - kappa*div(grad(c))
 
-    flux = lambda phi, n, kappa=kappa: dot(kappa*grad(phi), n)
+    flux = lambda c, n, kappa=kappa: dot(kappa*grad(c), n)
     
     # What we want to substitute
     x, y, kappa_ = sp.symbols('x y kappa')
@@ -247,22 +253,22 @@ def mms_ad(kappa_value):
     velocity_ = sp.Matrix([-(y-0.5), (x-0.5)])
 
     # Expressions
-    phi_ = sp.sin(pi*(x + y))*sp.exp(1-alpha_*time_)
+    c_ = sp.sin(pi*(x + y))*sp.exp(1-alpha_*time_)
 
-    subs = {phi: phi_, kappa: kappa_, alpha: alpha_, velocity: velocity_}
+    subs = {c: c_, kappa: kappa_, alpha: alpha_, velocity: velocity_}
     as_expr = lambda t: ulfy.Expression(t, subs=subs, degree=4,
                                         kappa=kappa_value, alpha=2,
                                         time=0.)
 
     # Solution
-    phi_exact, velocity = map(as_expr, (phi, velocity))
+    c_exact, velocity = map(as_expr, (c, velocity))
     # Forcing
     f = as_expr(f)
 
     normals = [Constant((-1, 0)), Constant((1, 0)), Constant((0, -1)), Constant((0, 1))]
-    fluxes = [as_expr(flux(phi, n)) for n in normals]
+    fluxes = [as_expr(flux(c, n)) for n in normals]
 
-    return {'solution': phi_exact,
+    return {'solution': c_exact,
             'forcing': f,
             'fluxes': fluxes,
             'velocity': velocity}
@@ -274,7 +280,7 @@ if __name__ == '__main__':
     kappa_value = 3E0
     data = mms_ad(kappa_value=kappa_value)
     
-    phi_exact = data['solution']
+    c_exact = data['solution']
     velocity = data['velocity']
     forcing = data['forcing']
     
@@ -293,9 +299,9 @@ if __name__ == '__main__':
     history = []
     for n in (4, 8, 16, 32, 64):
         # Reset time
-        for thing in (phi_exact, velocity, forcing):
+        for thing in (c_exact, velocity, forcing):
             hasattr(thing, 'time') and setattr(thing, 'time', parameters['T0'])
-        phi_0 = phi_exact
+        c_0 = c_exact
         
         mesh = UnitSquareMesh(n, n)
         # Setup similar to coupled problem ...
@@ -305,16 +311,16 @@ if __name__ == '__main__':
         CompiledSubDomain('near(x[1], 0)').mark(bdries, 3)
         CompiledSubDomain('near(x[1], 1)').mark(bdries, 4)
 
-        bcs = {'concentration': [], #[(t, phi_exact) for t in (1, )],
+        bcs = {'concentration': [], #[(t, c_exact) for t in (1, )],
                'flux': [(t, fluxes[t]) for t in (1, 2, 3, 4)]}
 
         W = FunctionSpace(mesh, Welm)
-        phi_h, T = solve_adv_diff_cyl(W, velocity=velocity, f=forcing, phi_0=phi_0,
+        c_h, T = solve_adv_diff_cyl(W, velocity=velocity, f=forcing, c_0=c_0,
                                       bdries=bdries, bcs=bcs, parameters=parameters)
         # Errors
-        print(phi_exact.time, T)
-        phi_exact.time = T
-        e = errornorm(phi_exact, phi_h, 'H1', degree_rise=2)
+        print(c_exact.time, T)
+        c_exact.time = T
+        e = errornorm(c_exact, c_h, 'H1', degree_rise=2)
 
         print('|c-ch|_1', e)
         history.append((mesh.hmin(), e))
@@ -330,7 +336,7 @@ if __name__ == '__main__':
     CompiledSubDomain('near(x[1], 0)').mark(bdries, 3)
     CompiledSubDomain('near(x[1], 1)').mark(bdries, 4)
 
-    bcs = {'concentration': [(t, phi_exact) for t in (1, 2)],
+    bcs = {'concentration': [(t, c_exact) for t in (1, 2)],
            'flux': [(t, fluxes[t]) for t in (3, 4)]}
 
     W = FunctionSpace(mesh, Welm)
@@ -346,20 +352,20 @@ if __name__ == '__main__':
                       'supg': True}
         
         # Reset time
-        for thing in (phi_exact, velocity, forcing):
+        for thing in (c_exact, velocity, forcing):
             hasattr(thing, 'time') and setattr(thing, 'time', parameters['T0'])
-        phi_0 = phi_exact
+        c_0 = c_exact
     
-        phi_h, T = solve_adv_diff(W, velocity=velocity, f=forcing, phi_0=phi_0,
+        c_h, T = solve_adv_diff(W, velocity=velocity, f=forcing, c_0=c_0,
                                   bdries=bdries, bcs=bcs, parameters=parameters)
         # Errors
-        print(phi_exact.time, T)
-        phi_exact.time = T
-        e = errornorm(phi_exact, phi_h, 'H1', degree_rise=2)
+        print(c_exact.time, T)
+        c_exact.time = T
+        e = errornorm(c_exact, c_h, 'H1', degree_rise=2)
 
-        # File('ph.pvd') << phi_h
-        # phi_h.vector().axpy(-1, interpolate(phi_exact, phi_h.function_space()).vector())
-        # File('p.pvd') << phi_h
+        # File('ph.pvd') << c_h
+        # c_h.vector().axpy(-1, interpolate(c_exact, c_h.function_space()).vector())
+        # File('p.pvd') << c_h
 
         print('@ T = {} with dt = {} |c-ch|_1 = {}'.format(T, dt, e))
         history.append((dt, mesh.hmin(), e))
