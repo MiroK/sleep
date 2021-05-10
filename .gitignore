@@ -17,6 +17,8 @@
 *.ipynb
 *.csv
 
+*.cpp
+*.sh
 
 ### vscode ###
 .devcontainer/*
