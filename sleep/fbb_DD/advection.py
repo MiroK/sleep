@@ -175,9 +175,17 @@ def solve_adv_diff(W, velocity,phi, f, c_0, phi_0, bdries, bcs, parameters):
 
     c_0 = interpolate(c_0, W)
 
-    #todo : correction for dt
+    #correction for dt
+
+    try:
+        psi0 = TestFunction(phi_0.function_space())
+    except AttributeError:
+        psi0 = TestFunction(W)
+    phi_0 = interpolate(phi_0, W)
+
+
     # Usual backward Euler
-    system = (inner((phi*c - phi_0*c_0)/dt, psi)*dx + dot(velocity, grad(c))*psi*dx +
+    system = (inner(phi*c/dt, psi)*dx - inner(phi_0*c_0/dt, psi0)*dx+ dot(velocity, grad(c))*psi*dx +
               kappa*phi*inner(grad(c), grad(psi))*dx - inner(f, psi)*dx)
     
     # SUPG stabilization
