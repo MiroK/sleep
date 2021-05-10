@@ -7,7 +7,7 @@ import os
 import numpy as np
 from math import pi
 
-from sleep.fbb_DD.advection2 import solve_adv_diff as solve_adv_diff
+from sleep.fbb_DD.advection import solve_adv_diff as solve_adv_diff
 from sleep.fbb_DD.fluid import solve_fluid as solve_fluid
 from sleep.fbb_DD.ale import solve_ale as solve_ale
 from sleep.utils import EmbeddedMesh
@@ -37,16 +37,16 @@ def line_sample(line, f, fill=np.nan):
             continue
     return values
 
-def slice_integrate_cyl(x,f,ymin,ymax,N=10) :
+def slice_integrate(x,f,ymin,ymax,N=10) :
     vertical_line=line([x,ymin],[x,ymax], N)
     values=line_sample(vertical_line, f)
-    r=np.linspace(ymin,ymax,N)
-    integral=2*np.trapz(values*r,r)/(ymax**2-ymin**2) #cylindrical coordinate
+    y=np.linspace(ymin,ymax,N)
+    integral=np.trapz(values,y)/(ymax-ymin) #cartesian coordinate
     return integral
 
-def profile_cyl(f,xmin,xmax,ymin,ymax,Nx=100,Ny=10):
+def profile(f,xmin,xmax,ymin,ymax,Nx=100,Ny=10):
     spanx=np.linspace(xmin,xmax,Nx)
-    values=[slice_integrate_cyl(x,f,ymin,ymax,N=Ny) for x in spanx]
+    values=[slice_integrate(x,f,ymin,ymax,N=Ny) for x in spanx]
     return np.array(values)
 
 
@@ -66,7 +66,7 @@ def title1(string):
 
 
 def PVS_simulation(args):
-    """ Solve the flow and tracer transport in the PVS :
+    """ Solve the flow and tracer transport in the PVS, assumption flat plates :
     Outputs :
     - a logfile with information about the simulation
     - .pvd files with the u, p and c field at specified args.toutput time period
@@ -130,7 +130,7 @@ def PVS_simulation(args):
     logging.info('|  __/ \ V /  ___) | \__ \ | | | | | | |_| | | (_| | |_| | (_) | | | |\n')
     logging.info('|_|     \_/  |____/  |___/_|_| |_| |_|\__,_|_|\__,_|\__|_|\___/|_| |_|\n\n')
 
-    logging.info(title1("Simulation of the PVS flow and tracer transport using non steady solver and diffusion-advection solvers"))
+    logging.info(title1("Simulation of the PVS flow and tracer transport using steady stokes solver and diffusion-advection solver. Flat plates geometry"))
 
     logging.info("Date and time:"+datetime.now().strftime("%m/%d/%Y, %H:%M:%S"))
 
@@ -432,14 +432,14 @@ def PVS_simulation(args):
     sqrt = sympy.sqrt
 
 
-    functionR = sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))) # displacement
+    functionR =Rpvs- (Rpvs-Rv)*(1+sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)])) # displacement bottom plate
     R_vessel = sympy.printing.ccode(functionR)
 
     functionV = sympy.diff(functionR,tn) # velocity
     V_vessel = sympy.printing.ccode(functionV)
 
     #Delta U for ALE. I dont really like this
-    functionUALE=sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*sin(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)])))- sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))) 
+    functionUALE=- (Rpvs-Rv)*(1+sum([a*sin(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)]))+ (Rpvs-Rv)*(1+sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))
     UALE_vessel = sympy.printing.ccode(functionUALE)   
 
     vf_bottom = Expression(('0',V_vessel ), tn = 0, degree=2)   # no slip no gap condition at vessel wall 
@@ -600,7 +600,7 @@ def PVS_simulation(args):
 
     for csv_file,field,name in zip(files,fields,field_names) :
         #values = line_sample(slice_line, field)
-        values =profile_cyl(field,xmin,xmax,ymin,ymax)
+        values =profile(field,xmin,xmax,ymin,ymax)
         logging.info('Max '+name+' : %.2e'%max(abs(values)))
         #logging.info('Norm '+name+' : %.2e'%field.vector().norm('linf'))
         row=[0]+list(values)
@@ -707,7 +707,7 @@ def PVS_simulation(args):
 
             for csv_file,field,name in zip(files,fields,field_names) :
                 #values = line_sample(slice_line, field)
-                values =profile_cyl(field,xmin,xmax,ymin,ymax)
+                values =profile(field,xmin,xmax,ymin,ymax)
                 logging.info('Max '+name+' : %.2e'%max(abs(values)))
                 #logging.info('Norm '+name+' : %.2e'%field.vector().norm('linf'))
                 row=[time-tshift]+list(values)
