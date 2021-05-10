@@ -657,7 +657,7 @@ def PVS_simulation(args):
         tracer_parameters["dt"]=dt
 
         # Solve tracer problem
-        c_, T0= solve_adv_diff(Ct, velocity=uf_, mesh_displacement=eta_f, f=Constant(0), phi_0=c_n,
+        c_, T0= solve_adv_diff(Ct, velocity=uf_-eta_f/Constant(dt), phi=Constant(1), f=Constant(0), c_0=c_n, phi_0=Constant(1),
                                   bdries=fluid_bdries, bcs=bcs_tracer, parameters=tracer_parameters)
 
 
