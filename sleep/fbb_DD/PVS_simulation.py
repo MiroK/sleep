@@ -47,7 +47,17 @@ def profile_cyl(f,xmin,xmax,ymin,ymax,Nx=100,Ny=10):
     values=[slice_integrate_cyl(x,f,ymin,ymax,N=Ny) for x in spanx]
     return np.array(values)
 
+def slice_integrate(x,f,ymin,ymax,N=10) :
+    vertical_line=line([x,ymin],[x,ymax], N)
+    values=line_sample(vertical_line, f)
+    r=np.linspace(ymin,ymax,N)
+    integral=2*np.trapz(values,r)/(ymax-ymin) #cylindrical coordinate
+    return integral
 
+def profile(f,xmin,xmax,ymin,ymax,Nx=100,Ny=10):
+    spanx=np.linspace(xmin,xmax,Nx)
+    values=[slice_integrate_cyl(x,f,ymin,ymax,N=Ny) for x in spanx]
+    return np.array(values)
 
 def line(A, B, nsteps):
     A=np.array(A)
@@ -516,7 +526,7 @@ def PVS_simulation(args):
         tracer_parameters["dt"]=dt
 
         # Solve tracer problem
-        c_, T0= solve_adv_diff(Ct, velocity=uf_, mesh_displacement=eta_f, f=Constant(0), phi_0=c_n,
+        c_, T0= solve_adv_diff(Ct, velocity=uf_-eta_f/Constant(dt), phi=Constant(1), f=Constant(0), c_0=c_n, phi_0=Constant(1),
                                   bdries=fluid_bdries, bcs=bcs_tracer, parameters=tracer_parameters)
 
 
@@ -567,13 +577,13 @@ def PVS_simulation(args):
 
             for csv_file,field,name in zip(files,fields,field_names) :
                 #values = line_sample(slice_line, field)
-                values =profile_cyl(field,xmin,xmax,ymin,ymax)
+                values =profile(field,xmin,xmax,ymin,ymax)
                 logging.info('Max '+name+' : %.2e'%max(abs(values)))
                 #logging.info('Norm '+name+' : %.2e'%field.vector().norm('linf'))
                 row=[time]+list(values)
                 csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
 
-            csv_rv.write('%e, %e'%(time,ymin))
+            csv_rv.write('%e, %e\n'%(time,ymin))
 
 
 
@@ -605,7 +615,7 @@ if __name__ == '__main__':
                         default=10e-4,
                         help='PVS outer radius as rest')
 
-    my_parser.add_argument('-l','--length',
+    my_parser.add_argument('-lpvs','--length',
                         type=float,
                         default=100e-4,
                         help='Length of the vessel')
