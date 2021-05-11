@@ -296,7 +296,7 @@ def PVSbrain_simulation(args):
     # Mesh
     logging.info(title1('Meshing'))
 
-    meshing='gmsh'
+    meshing=args.mesh_method
 
     if meshing=='regular' :
         # Create a mesh using Rectangle mesh : all the cells are regulars but this means a lot of cells
@@ -575,7 +575,7 @@ def PVSbrain_simulation(args):
     mask_fluid=Function(maskspace, assemble(form))
 
     File(outputfolder+'fields'+'/mask_fluid.pvd') << mask_fluid
- 
+    File(outputfolder+'fields'+'/mask_solid.pvd') << mask_solid
     #FEM space
 
     logging.info(title1("Set FEM spaces"))
@@ -596,6 +596,8 @@ def PVSbrain_simulation(args):
     Ws = FunctionSpace(mesh_s, Ws_elm)
 
     logging.info('\n * Tracer')
+    #### Todo : I would like to be able to have discontinuous concentration when we will have the membrane
+    #### Beter to solve in two domains or one domain with discontinuous lagrange element ?
     Ct_elm = FiniteElement('Lagrange', triangle, 1)
     Ct = FunctionSpace(mesh, Ct_elm)
     logging.info('Concentration : "Lagrange", triangle, 1')
@@ -613,7 +615,7 @@ def PVSbrain_simulation(args):
     Va_s = VectorFunctionSpace(mesh_s, 'CG', 1)
 
     # Displacement in the full domain
-    Va_full = VectorFunctionSpace(mesh, 'CG', 1)
+    Va_full = VectorFunctionSpace(mesh, 'CG', 2)
 
     # CHECK here
     # Should I take  VectorElement / Finite elements or VectorFunctionSpace/FunctionSpace with 'CG',1 , 2?
@@ -623,8 +625,8 @@ def PVSbrain_simulation(args):
 
 
     # Porosity variables 
-    FS_porosity= FunctionSpace(mesh, 'DG', 1)
-    FS_porositys= FunctionSpace(mesh_s, 'DG', 1)
+    FS_porosity= FunctionSpace(mesh, 'DG', 0)
+    FS_porositys= FunctionSpace(mesh_s, 'DG', 0)
 
     #porosity_elm = FiniteElement('Lagrange', triangle, 1)
     #FS_porosity = FunctionSpace(mesh, porosity_elm)
@@ -747,12 +749,14 @@ def PVSbrain_simulation(args):
 
 
     #todo : add case fluid free
-    bcs_tracer = {'concentration': [(facet_lookup['F_left'], Constant(0)),
-                                          (facet_lookup['S_left'], Constant(0))],
+    bcs_tracer = {'concentration': [(facet_lookup['F_left'], Constant(1)),
+                                          (facet_lookup['S_left'], Constant(1))],
                     'flux': [(facet_lookup['F_right'], Constant(0)),
                             (facet_lookup['S_right'], Constant(0)),
                             (facet_lookup['F_bottom'], Constant(0)),
                             (facet_lookup['S_top'], Constant(0))]}
+
+
 
     bcs_solid = {   'elasticity': {
                         'displacement': [],
@@ -820,9 +824,17 @@ def PVSbrain_simulation(args):
 
     mesh.bounding_box_tree().build(mesh) 
 
-    cf_0 = Expression('exp(-a*pow(x[0]-b, 2)) ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss)
+    # Gaussian in the PVS
+    #cf_0 = Expression('x[1]<= Rpvs ? exp(-a*pow(x[0]-b, 2))*(x[1]-Rpvs)/(Rv-Rpvs) : 0 ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss, Rv=Rv, Rpvs=Rpvs)
 
-    c_n =  project(mask_fluid*cf_0,Ct)#
+    # heavyside in the axial direction
+    # cf_0 = Expression('x[0]<= 150e-4 ? 1 : 0 ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss, Rv=Rv, Rpvs=Rpvs)
+
+    # 1 in the PVS
+    cf_0 = Expression('x[1]<= Rpvs ? 1 : 0 ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss, Rv=Rv, Rpvs=Rpvs)
+
+
+    c_n =  project(cf_0,Ct)#
 
     
  
@@ -966,7 +978,8 @@ def PVSbrain_simulation(args):
 
 
         #CHECK project or asign ?
-        eta_n=project(mask_solid*etas_n+mask_fluid*etaf_n,Va_full)
+
+        eta_n=project(mask_solid*etas_n+mask_fluid*etaf_n,Va_full)#etaf_n
 
         #This is quite long
         ALE.move(mesh, eta_n)
@@ -1016,16 +1029,16 @@ def PVSbrain_simulation(args):
         #porositys_=project(porositys_n+solid_parameters['alpha']*div(etas_)+solid_parameters['s0']*(ps_-ps_n),FS_porositys)
         porositys_=project((porositys_n+div(etas_))/(1+div(etas_)),FS_porositys)
         porositys_.set_allow_extrapolation(True)
+        porosity_=project(mask_solid*porositys_+mask_fluid*Constant(1),FS_porosity)
+
         uf_.set_allow_extrapolation(True)
         us_n.set_allow_extrapolation(True)
 
-        porosity_=project(mask_solid*porositys_+mask_fluid*Constant(1),FS_porosity)
-
         #CHECK : I use us_n to be sure to have continuity at the interface. I dont know if this 'delayed' adv velocity in the solid domain is an issue.
         advection_velocity=project(mask_solid*us_n+mask_fluid*(uf_-etaf_n/Constant(dt)),FS_advvel)
+        advection_velocity=project(Constant((0,0)),FS_advvel)
 
-
-        c_, T0= solve_adv_diff(Ct, velocity=advection_velocity, phi=porosity_, f=Constant(0), c_0=c_n, phi_0=porosity_n,
+        c_, T0= solve_adv_diff(Ct, velocity=advection_velocity, phi=Constant(0.2), f=Constant(0), c_0=c_n, phi_0=Constant(0.2),
                                   bdries=full_bdries, bcs=bcs_tracer, parameters=tracer_parameters)
 
 
@@ -1056,7 +1069,8 @@ def PVSbrain_simulation(args):
     
             uf_out << (uf_n, time-tshift)
             pf_out << (pf_n, time-tshift)
-
+            etaf_n.rename("fluid_def", "tmp")
+            File(outputfolder+'fields'+'/fluid_def.pvd') << (etaf_n, time-tshift)
 
             etas_n.rename("us", "tmp")
             us_n.rename("qs", "tmp")
@@ -1075,6 +1089,9 @@ def PVSbrain_simulation(args):
 
             advection_velocity.rename("adv_vel", "tmp")
             File(outputfolder+'fields'+'/adv_vel.pvd') << (advection_velocity, time-tshift)
+
+            eta_n.rename("mesh_def", "tmp")
+            File(outputfolder+'fields'+'/mesh_def.pvd') << (eta_n, time-tshift)
 
             ## Get the 1 D profiles at umax (to be changed in cyl coordinate)
             #mesh_points=mesh_f.coordinates()                                                      
@@ -1155,7 +1172,7 @@ if __name__ == '__main__':
     my_parser.add_argument('-fi',
                         type=float,
                         nargs='+',
-                        default=[0.2],
+                        default=[1],
                         help='List of fi')
 
 
@@ -1263,8 +1280,12 @@ if __name__ == '__main__':
     my_parser.add_argument('-phi','--biot_porosity',
                         type=float,
                         default=0.2,
-                        help='Porosity in the Biot domain')                       
+                        help='Porosity in the Biot domain')     
 
+    my_parser.add_argument('-mesh','--mesh_method',
+                        type=str,
+                        default='regular',
+                        help='Method for the mesh construction')   
     args = my_parser.parse_args()
 
 
