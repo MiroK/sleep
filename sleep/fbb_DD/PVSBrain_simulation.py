@@ -973,9 +973,6 @@ def PVSbrain_simulation(args):
         csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
 
 
-
-
-
     ############# RUN ###########
 
     logging.info(title1("Run"))
@@ -1001,7 +998,8 @@ def PVSbrain_simulation(args):
 
     cycletimes=[]
 
-    while time < 2*period+tshift-dt:
+
+    while time < 2*period+tshift:
         time+=dt
         timestep+=1
         print('time', time-tshift)
@@ -1145,11 +1143,15 @@ def PVSbrain_simulation(args):
 
     n_cycle=-1
     timestep=0
+
+
+
     # Here I dont know if there will be several dt for advdiff and fluid solver
     while n_cycle < N_cycles-1:
         n_cycle+=1
 
         for it,time in enumerate(cycletimes) : 
+            print(time)
             #get actual time
             current_time=n_cycle*period+time
             #get data from files
