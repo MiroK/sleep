@@ -192,11 +192,24 @@ def PVSbrain_simulation(args):
     logging.info('\n * Time')
     toutput=args.toutput
     tfinal=args.tend
-    dt=args.time_step
+
+    ## Here we take a time step that corresponds to the period
+    # Todo adapt when fi is a list : find the global period
+    if fi[0]==0 :
+        dt=args.time_step
+    else :
+        period=1/fi[0]
+        dt=args.time_step
+        # at least 4 timestep per period 
+        Ntimesteps=max(4,int(period/dt))
+        dt=period/Ntimesteps
+    
+    
 
     logging.info('final time: %e s'%tfinal)
     logging.info('output period : %e s'%toutput)
-    logging.info('time step : %e s'%dt)
+    logging.info('time step requested: %e s'%args.time_step)
+    logging.info('actual time step : %e s'%dt)
 
     # approximate CFL for fluid solver : need to compute max velocity depending on the wall displacement... 
     # maybe just add a warning in computation with actual velocity
@@ -251,7 +264,7 @@ def PVSbrain_simulation(args):
     logging.info('initial porosity: %e '%porosity_0)
     logging.info('tortuosity: %e '%tortuosity)
     logging.info('hydraulic conductivity : %e cm2/(g.cm-1.s-1)'%conductivity)
-    logging.info('permeability : %e cm2'%conductivity)
+    logging.info('permeability : %e cm2'%permeability)
     logging.info('poisson coefficient : %e '%poisson)
     logging.info('biot coefficient : %e '%alpha)
     logging.info('storage coefficient : %e '%s0)
@@ -354,16 +367,20 @@ def PVSbrain_simulation(args):
         f = factory.addPoint(0,Rbrain,0)
 
 
-        fluid_lines = [factory.addLine(*p) for p in ((a,b), (b, c), (c,d), (d,a))]
-        named_lines = dict(zip(('bottom', 'pvs_right', 'interface', 'pvs_left'), fluid_lines))
+        fluid_lines = [factory.addLine(*p) for p in ((d,a),(a,b), (b, c),(c,d) )]
+        interface=[fluid_lines.pop()]
+        named_lines = dict(zip(('pvs_left','bottom', 'pvs_right'), fluid_lines))
 
-        fluid_loop = factory.addCurveLoop(fluid_lines)
+
+        solid_lines = [factory.addLine(*p) for p in ((c, e), (e,f), (f,d))]
+        named_lines.update(dict(zip(( 'brain_right', 'brain_top', 'brain_left'), solid_lines)))
+
+        named_lines.update(dict(zip(( 'interface'), interface)))
+
+        fluid_loop = factory.addCurveLoop(fluid_lines+interface)
         fluid = factory.addPlaneSurface([fluid_loop])
 
-        solid_lines = [factory.addLine(*p) for p in ((d,c), (c, e), (e,f), (f,d))]
-        named_lines.update(dict(zip(('interface', 'brain_right', 'brain_top', 'brain_left'), solid_lines)))
-
-        solid_loop = factory.addCurveLoop(solid_lines)
+        solid_loop = factory.addCurveLoop(interface+solid_lines)
         solid = factory.addPlaneSurface([solid_loop])
 
 
@@ -749,8 +766,8 @@ def PVSbrain_simulation(args):
 
 
     #todo : add case fluid free
-    bcs_tracer = {'concentration': [(facet_lookup['F_left'], Constant(1)),
-                                          (facet_lookup['S_left'], Constant(1))],
+    bcs_tracer = {'concentration': [(facet_lookup['F_left'], Constant(0)),
+                                          (facet_lookup['S_left'], Constant(0))],
                     'flux': [(facet_lookup['F_right'], Constant(0)),
                             (facet_lookup['S_right'], Constant(0)),
                             (facet_lookup['F_bottom'], Constant(0)),
@@ -830,9 +847,17 @@ def PVSbrain_simulation(args):
     # heavyside in the axial direction
     # cf_0 = Expression('x[0]<= 150e-4 ? 1 : 0 ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss, Rv=Rv, Rpvs=Rpvs)
 
-    # 1 in the PVS
-    cf_0 = Expression('x[1]<= Rpvs ? 1 : 0 ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss, Rv=Rv, Rpvs=Rpvs)
+    #Gaussian on the left side
+    cf_0 = Expression('x[0]<= 50e-4 ? exp(-a*pow(x[0]-b, 2)): 0 ', degree=2, a=1/2/(2e-4)**2, b=0, Rv=Rv, Rpvs=Rpvs)
 
+    #Gaussian on the right side
+    cf_0 = Expression('exp(-a*pow(x[0]-b, 2)) ', degree=2, a=1/2/(150e-4)**2, b=L, Rv=Rv, Rpvs=Rpvs)
+
+    # 1 in the PVS
+    #cf_0 = Expression('x[1]<= Rpvs ? 1 : 0 ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss, Rv=Rv, Rpvs=Rpvs)
+
+    # 1 every where
+    #cf_0=Constant(1)
 
     c_n =  project(cf_0,Ct)#
 
@@ -859,7 +884,7 @@ def PVSbrain_simulation(args):
 
     #Initial deformation of the fluid domain
     # We start at a time shift
-    tshift=0 #  1/4/fi[0] 
+    tshift= 1/4/fi[0] 
 
     # Update boundary conditions
     for expr in driving_expressions:
@@ -941,6 +966,10 @@ def PVSbrain_simulation(args):
     timestep=0
 
 
+    ##############
+    # First we solve the Biot stokes problem on 2 period (to avoid the effect of initial conditions)
+    ##################
+
 
 
 
@@ -991,31 +1020,39 @@ def PVSbrain_simulation(args):
         mesh_f.bounding_box_tree().build(mesh_f)
         mesh_s.bounding_box_tree().build(mesh_s)
 
+        n_f, n_p = FacetNormal(mesh_f), FacetNormal(mesh_s)
 
 
-        # Solve fluid problem        
-        
-        # Impose the velocity in the fluid at the interface, given dU/dt of the interface and the percolation velocity at last time step  
-        transfer_into(vf_interface, etas_n/Constant(dt) + us_n, boundaries)
+        for step in [1] :
 
-        uf_, pf_ = solve_fluid(Wf, u_n=uf_n, p_n=pf_n,  f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_fluid,
-                            parameters=fluid_parameters)
+            # Solve fluid problem        
+            
+            # Impose the velocity in the fluid at the interface, given dU/dt of the interface and the percolation velocity at last time step  
+            transfer_into(vf_interface, etas_n/Constant(dt) + us_n, boundaries)
 
-
-        # Solve porous problem
-        # Transfer the fluid pressure from fluid domain
-        transfer_into(p_interface, pf_, boundaries)   
-
-        # and normal stress from fluid domain
-        # CHECK update n_f ? after ALE
-        transfer_into(traction_interface,-dot(sigma_f(uf_, pf_), n_f),boundaries) 
+            uf_, pf_ = solve_fluid(Wf, u_n=uf_n, p_n=pf_n,  f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_fluid,
+                                parameters=fluid_parameters)
 
 
-        etas_, us_, ps_ = solve_solid(Ws, f1=Constant((0, 0)), f2=Constant(0), eta_0=etas_0, p_0=ps_n,
-                                            bdries=solid_bdries, bcs=bcs_solid, parameters=solid_parameters)
+            # Solve porous problem
+            # Transfer the fluid pressure from fluid domain
+            transfer_into(p_interface, pf_, boundaries)   
 
-        
+            # and normal stress from fluid domain
+            # CHECK update n_f ? after ALE
+            transfer_into(traction_interface,-dot(sigma_f(uf_, pf_), n_f),boundaries) 
 
+
+            etas_, us_, ps_ = solve_solid(Ws, f1=Constant((0, 0)), f2=Constant(0), eta_0=etas_0, p_0=ps_n,
+                                                bdries=solid_bdries, bcs=bcs_solid, parameters=solid_parameters)
+
+            # Update current solution
+            uf_n.assign(uf_)
+            pf_n.assign(pf_)
+
+            etas_n.assign(etas_)
+            us_n.assign(us_)
+            ps_n.assign(ps_)
 
         # Solve tracer problem
         # Todo : Maybe simplify and remove this as we are not using substeping ?
@@ -1024,8 +1061,8 @@ def PVSbrain_simulation(args):
         # Compute the porosity in the Biot domain
         # Extend solid deformation to 3D : for cylindrical symmetry
         #deformation = as_vector((etas_[0], etas_[1],Constant(0)))
-       
-       
+        
+        
         #porositys_=project(porositys_n+solid_parameters['alpha']*div(etas_)+solid_parameters['s0']*(ps_-ps_n),FS_porositys)
         porositys_=project((porositys_n+div(etas_))/(1+div(etas_)),FS_porositys)
         porositys_.set_allow_extrapolation(True)
@@ -1036,19 +1073,9 @@ def PVSbrain_simulation(args):
 
         #CHECK : I use us_n to be sure to have continuity at the interface. I dont know if this 'delayed' adv velocity in the solid domain is an issue.
         advection_velocity=project(mask_solid*us_n+mask_fluid*(uf_-etaf_n/Constant(dt)),FS_advvel)
-        advection_velocity=project(Constant((0,0)),FS_advvel)
 
-        c_, T0= solve_adv_diff(Ct, velocity=advection_velocity, phi=Constant(0.2), f=Constant(0), c_0=c_n, phi_0=Constant(0.2),
-                                  bdries=full_bdries, bcs=bcs_tracer, parameters=tracer_parameters)
-
-
-        # Update current solution
-        uf_n.assign(uf_)
-        pf_n.assign(pf_)
-
-        etas_n.assign(etas_)
-        us_n.assign(us_)
-        ps_n.assign(ps_)
+        c_, T0= solve_adv_diff(Ct, velocity=advection_velocity, phi=porosity_, f=Constant(0), c_0=c_n, phi_0=porosity_n,
+                                    bdries=full_bdries, bcs=bcs_tracer, parameters=tracer_parameters)
 
         c_n.assign(c_)
 
@@ -1239,7 +1266,7 @@ if __name__ == '__main__':
 
     my_parser.add_argument('-d','--diffusion_coef',
                         type=float,
-                        default=2e-8,
+                        default=1e-7,
                         help='Molecular diffusion coefficient of the tracer')
 
     my_parser.add_argument('-s','--sigma',
@@ -1254,12 +1281,12 @@ if __name__ == '__main__':
 
     my_parser.add_argument('-perm','--biot_permeability',
                         type=float,
-                        default=3e-13,
+                        default=3.3e-13,
                         help='Permeability in the biot domain (cm2)')
 
     my_parser.add_argument('-E','--biot_youngmodulus',
                         type=float,
-                        default=5000e3,
+                        default=1000e3,
                         help='Young modulus in the Biot domain (dyn/cm2)')
 
     my_parser.add_argument('-nu','--biot_poisson',
@@ -1274,7 +1301,7 @@ if __name__ == '__main__':
 
     my_parser.add_argument('-tau','--biot_tortuosity',
                         type=float,
-                        default=1,
+                        default=0.5,
                         help='Tortuosity in the Biot domain')
 
     my_parser.add_argument('-phi','--biot_porosity',
