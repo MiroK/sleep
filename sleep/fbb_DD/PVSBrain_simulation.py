@@ -5,7 +5,7 @@ from datetime import datetime
 import os
 
 import numpy as np
-from math import pi
+from math import pi, ceil
 
 from sleep.fbb_DD.domain_transfer import transfer_into
 from sleep.fbb_DD.advection import solve_adv_diff as solve_adv_diff
@@ -187,15 +187,29 @@ def PVSbrain_simulation(args):
     logging.info('progression parameter in biot: %e'%s_biot)
 
     
+    #Oscillation parameters
+
+    logging.info('\n * Cross section area parameters')
+    ai=args.ai
+    fi=args.fi
+    phii=args.phii
+    logging.info('ai (dimensionless): '+'%e '*len(ai)%tuple(ai))
+    logging.info('fi (Hz) : '+'%e '*len(fi)%tuple(fi))
+    logging.info('phii (rad) : '+'%e '*len(phii)%tuple(phii))
+
 
     #time parameters
     logging.info('\n * Time')
     toutput=args.toutput
+    toutput_cycle=args.toutputcycle
     tfinal=args.tend
+
+
 
     ## Here we take a time step that corresponds to the period
     # Todo adapt when fi is a list : find the global period
     if fi[0]==0 :
+        period=tfinal
         dt=args.time_step
     else :
         period=1/fi[0]
@@ -203,13 +217,24 @@ def PVSbrain_simulation(args):
         # at least 4 timestep per period 
         Ntimesteps=max(4,int(period/dt))
         dt=period/Ntimesteps
-    
-    
+
+    # at least 4 output for the cycle
+    n_output=max(4,int(period/toutput_cycle))
+    toutput_cycle=period/n_output
+
+    # at least the time step
+    toutput=max(toutput,dt)
+
+
+    ## Number of period to solve
+    N_cycles=ceil(tfinal/period)
 
     logging.info('final time: %e s'%tfinal)
-    logging.info('output period : %e s'%toutput)
+    logging.info('output period during the stokes biot resolution : %e s'%toutput_cycle)
+    logging.info('output period during the advection diffusion resolution : %e s'%toutput)
     logging.info('time step requested: %e s'%args.time_step)
-    logging.info('actual time step : %e s'%dt)
+    logging.info('oscillation period: %e s'%period)
+    logging.info('Nb of cycles : %e s'%dt)
 
     # approximate CFL for fluid solver : need to compute max velocity depending on the wall displacement... 
     # maybe just add a warning in computation with actual velocity
@@ -661,13 +686,7 @@ def PVSbrain_simulation(args):
     sin = sympy.sin
     sqrt = sympy.sqrt
 
-    logging.info('\n * Cross section area parameters')
-    ai=args.ai
-    fi=args.fi
-    phii=args.phii
-    logging.info('ai (dimensionless): '+'%e '*len(ai)%tuple(ai))
-    logging.info('fi (Hz) : '+'%e '*len(fi)%tuple(fi))
-    logging.info('phii (rad) : '+'%e '*len(phii)%tuple(phii))
+
 
 
     # Vessel radius
@@ -957,9 +976,13 @@ def PVSbrain_simulation(args):
 
 
 
-    ############# RUN ############3
+    ############# RUN ###########
 
     logging.info(title1("Run"))
+
+
+
+    logging.info(title1("Stokes - Biot over 2 cycles"))
 
     # Time loop
     time = tshift
@@ -967,15 +990,18 @@ def PVSbrain_simulation(args):
 
 
     ##############
-    # First we solve the Biot stokes problem on 2 period (to avoid the effect of initial conditions)
+    # First we solve the Biot stokes problem on 2 periods 
+    # We dont take one period to avoid the effect of initial conditions.
+    # We store the adv velocity and the deformation of the mesh in a file
     ##################
 
+    advvel_file = HDF5File(mesh.mpi_comm(), outputfolder+"advection_velocity.h5", "w")
+    meshdeformation_file= HDF5File(mesh.mpi_comm(), outputfolder+"mesh_deformation.h5", "w")
+    porosity_file = HDF5File(mesh.mpi_comm(), outputfolder+"porosity.h5", "w")
 
+    cycletimes=[]
 
-
-    # Here I dont know if there will be several dt for advdiff and fluid solver
-    while time < tfinal+tshift:
-
+    while time < 2*period+tshift-dt:
         time+=dt
         timestep+=1
         print('time', time-tshift)
@@ -1001,68 +1027,58 @@ def PVSbrain_simulation(args):
         etaf_n = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale,
                       parameters=ale_parameters)
 
-        #CHECK is it okay to do that ? the extrapolated part is set to 0 with the mask function
+        #CHECK if it okay to do that ? the extrapolated part is set to 0 with the mask function
         etas_n.set_allow_extrapolation(True)
         etaf_n.set_allow_extrapolation(True)
 
 
         #CHECK project or asign ?
-
         eta_n=project(mask_solid*etas_n+mask_fluid*etaf_n,Va_full)#etaf_n
 
         #This is quite long
-        ALE.move(mesh, eta_n)
         ALE.move(mesh_f, etaf_n)
         ALE.move(mesh_s, interpolate(etas_n, Va_s))
 
         #is needed for the masks
-        mesh.bounding_box_tree().build(mesh) 
         mesh_f.bounding_box_tree().build(mesh_f)
         mesh_s.bounding_box_tree().build(mesh_s)
 
         n_f, n_p = FacetNormal(mesh_f), FacetNormal(mesh_s)
 
-
-        for step in [1] :
-
-            # Solve fluid problem        
+        #Solve fluid problem        
             
-            # Impose the velocity in the fluid at the interface, given dU/dt of the interface and the percolation velocity at last time step  
-            transfer_into(vf_interface, etas_n/Constant(dt) + us_n, boundaries)
+        # Impose the velocity in the fluid at the interface, given dU/dt of the interface and the percolation velocity at last time step  
+        # should do it with a Nistche approach ??
+        transfer_into(vf_interface, etas_n/Constant(dt) + us_n, boundaries)
 
-            uf_, pf_ = solve_fluid(Wf, u_n=uf_n, p_n=pf_n,  f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_fluid,
+        uf_, pf_ = solve_fluid(Wf, u_n=uf_n, p_n=pf_n,  f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_fluid,
                                 parameters=fluid_parameters)
 
 
-            # Solve porous problem
-            # Transfer the fluid pressure from fluid domain
-            transfer_into(p_interface, pf_, boundaries)   
+        # Solve porous problem
+        # Transfer the fluid pressure from fluid domain
+        # should do it with a Nistche approach ??
+        transfer_into(p_interface, pf_, boundaries)   
 
-            # and normal stress from fluid domain
-            # CHECK update n_f ? after ALE
-            transfer_into(traction_interface,-dot(sigma_f(uf_, pf_), n_f),boundaries) 
+        # and normal stress from fluid domain
+        # CHECK update n_f ? after ALE
+        transfer_into(traction_interface,-dot(sigma_f(uf_, pf_), n_f),boundaries) 
 
+        # todo : I would like to add zero tangential displacement : dirichlet or Nistche ?
 
-            etas_, us_, ps_ = solve_solid(Ws, f1=Constant((0, 0)), f2=Constant(0), eta_0=etas_0, p_0=ps_n,
+        etas_, us_, ps_ = solve_solid(Ws, f1=Constant((0, 0)), f2=Constant(0), eta_0=etas_0, p_0=ps_n,
                                                 bdries=solid_bdries, bcs=bcs_solid, parameters=solid_parameters)
 
-            # Update current solution
-            uf_n.assign(uf_)
-            pf_n.assign(pf_)
+        # Update current solution
+        uf_n.assign(uf_)
+        pf_n.assign(pf_)
 
-            etas_n.assign(etas_)
-            us_n.assign(us_)
-            ps_n.assign(ps_)
+        etas_n.assign(etas_)
+        us_n.assign(us_)
+        ps_n.assign(ps_)
 
-        # Solve tracer problem
-        # Todo : Maybe simplify and remove this as we are not using substeping ?
-        tracer_parameters["T0"]=time
 
-        # Compute the porosity in the Biot domain
-        # Extend solid deformation to 3D : for cylindrical symmetry
-        #deformation = as_vector((etas_[0], etas_[1],Constant(0)))
-        
-        
+        #### project on the whole mesh the advection velocity and porosity
         #porositys_=project(porositys_n+solid_parameters['alpha']*div(etas_)+solid_parameters['s0']*(ps_-ps_n),FS_porositys)
         porositys_=project((porositys_n+div(etas_))/(1+div(etas_)),FS_porositys)
         porositys_.set_allow_extrapolation(True)
@@ -1074,17 +1090,19 @@ def PVSbrain_simulation(args):
         #CHECK : I use us_n to be sure to have continuity at the interface. I dont know if this 'delayed' adv velocity in the solid domain is an issue.
         advection_velocity=project(mask_solid*us_n+mask_fluid*(uf_-etaf_n/Constant(dt)),FS_advvel)
 
-        c_, T0= solve_adv_diff(Ct, velocity=advection_velocity, phi=porosity_, f=Constant(0), c_0=c_n, phi_0=porosity_n,
-                                    bdries=full_bdries, bcs=bcs_tracer, parameters=tracer_parameters)
-
-        c_n.assign(c_)
-
         porositys_n.assign(porositys_)
-        porosity_n.assign(porosity_)
 
+        ### Save the data needed for the adv_diff solver into h5 files
+        ## On the second period
+        if time>period+tshift :
+            cycletimes.append(time-period-tshift) # I substract period and t shift in order to have times in [0, T]
+            advvel_file.write(advection_velocity.vector(), "/values_{}".format(len(cycletimes)))
+            porosity_file.write(porosity_.vector(), "/values_{}".format(len(cycletimes)))
+            meshdeformation_file.write(eta_n.vector(), "/values_{}".format(len(cycletimes)))
+            #cPickle.dump(cycletimes, open("times.cpickle", "w"))        # Save output
 
-        # Save output
-        if(timestep % int(toutput/dt) == 0):
+        ## Save the outputs in vtk format    
+        if(timestep % int(toutput_cycle/dt) == 0):
 
             logging.info("\n*** save output time %e s"%(time-tshift))
             logging.info("number of time steps %i"%timestep)
@@ -1096,6 +1114,8 @@ def PVSbrain_simulation(args):
     
             uf_out << (uf_n, time-tshift)
             pf_out << (pf_n, time-tshift)
+
+
             etaf_n.rename("fluid_def", "tmp")
             File(outputfolder+'fields'+'/fluid_def.pvd') << (etaf_n, time-tshift)
 
@@ -1103,13 +1123,10 @@ def PVSbrain_simulation(args):
             us_n.rename("qs", "tmp")
             ps_n.rename("ps", "tmp")
 
-
             etas_out << (etas_n, time-tshift)
             qs_out << (us_n, time-tshift)
             ps_out << (ps_n, time-tshift)
 
-            c_n.rename("c", "tmp")
-            c_out << (c_n, time-tshift)
 
             porosity_n.rename("phi", "tmp")
             phi_out << (porosity_n, time-tshift)
@@ -1120,37 +1137,59 @@ def PVSbrain_simulation(args):
             eta_n.rename("mesh_def", "tmp")
             File(outputfolder+'fields'+'/mesh_def.pvd') << (eta_n, time-tshift)
 
-            ## Get the 1 D profiles at umax (to be changed in cyl coordinate)
-            #mesh_points=mesh_f.coordinates()                                                      
-            #x=mesh_points[:,0]
-            #y=mesh_points[:,1]
-            #xmin=min(x)
-            #xmax=max(x)
-            #ymin=min(y)
-            #ymax=max(y)
-                        
-            #slice_line = line([xmin,(ymin+ymax)/2],[xmax,(ymin+ymax)/2], 100)
 
-            #logging.info('Rpvs : %e'%ymax)
-            #logging.info('Rvn : %e'%ymin)
+    logging.info(title1("Advection - diffusion up to the end "))
 
-            #files=[csv_p,csv_u,csv_c]
-            #fields=[pf_n,uf_n.sub(0),c_n]
-            #field_names=['pressure (dyn/cm2)','axial velocity (cm/s)','concentration']
+    # Restart time loop
+    timestep=0
 
-            ##todo : correct here the y integration (the interval changes with x due to deformations of the brain)
-            ##need to CHECK : impose that the brain interface deform only along y ?
-            #for csv_file,field,name in zip(files,fields,field_names) :
-            #    #values = line_sample(slice_line, field)
-            #    values =profile_cyl(field,xmin,xmax,ymin,ymax)
-            #    logging.info('Max '+name+' : %.2e'%max(abs(values)))
-            #    #logging.info('Norm '+name+' : %.2e'%field.vector().norm('linf'))
-            #    row=[time-tshift]+list(values)
-            #    csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
+    n_cycle=-1
+    timestep=0
+    # Here I dont know if there will be several dt for advdiff and fluid solver
+    while n_cycle < N_cycles-1:
+        n_cycle+=1
 
-            #csv_rv.write('%e, %e'%(time-tshift,ymin))
+        for it,time in enumerate(cycletimes) : 
+            #get actual time
+            current_time=n_cycle*period+time
+            #get data from files
+            advvel_file.read(advection_velocity.vector(), "/values_{}".format(it+1), True)
+            porosity_file.read(porosity_.vector(), "/values_{}".format(it+1), True)
+            meshdeformation_file.read(eta_n.vector(), "/values_{}".format(it+1), True)
+
+            timestep+=1
+            print('time', current_time)
 
 
+            #This is quite long
+            ALE.move(mesh, eta_n)
+            #is needed for the masks
+            mesh.bounding_box_tree().build(mesh) 
+
+            # Solve tracer problem
+            # Todo : Maybe simplify and remove this as we are not using substeping ?
+            tracer_parameters["T0"]=current_time
+
+
+            c_, T0= solve_adv_diff(Ct, velocity=advection_velocity, phi=porosity_, f=Constant(0), c_0=c_n, phi_0=porosity_n,
+                                    bdries=full_bdries, bcs=bcs_tracer, parameters=tracer_parameters)
+
+            c_n.assign(c_)
+            
+            porosity_n.assign(porosity_)
+
+
+            # Save output
+            if(timestep % int(toutput/dt) == 0):
+
+                logging.info("\n*** save output time %e s"%(current_time))
+                logging.info("number of time steps %i"%timestep)
+                logging.info("cycle # %i"%n_cycle)
+
+                # may report Courant number or other important values that indicate how is doing the run
+
+                c_n.rename("c", "tmp")
+                c_out << (c_n, current_time)
 
 
 if __name__ == '__main__':
@@ -1217,7 +1256,12 @@ if __name__ == '__main__':
     my_parser.add_argument('-toutput',
                         type=float,
                         default=5e-2,
-                        help='output period')                       
+                        help='output period for the adv-diff problem')        
+
+    my_parser.add_argument('-toutputcycle',
+                        type=float,
+                        default=5e-2,
+                        help='output period for the stoke biot solution on one period')               
 
     my_parser.add_argument('-dt','--time_step',
                         type=float,
