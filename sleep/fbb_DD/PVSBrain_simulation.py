@@ -785,8 +785,8 @@ def PVSbrain_simulation(args):
 
 
     #todo : add case fluid free
-    bcs_tracer = {'concentration': [(facet_lookup['F_left'], Constant(0)),
-                                          (facet_lookup['S_left'], Constant(0))],
+    bcs_tracer = {'concentration': [(facet_lookup['F_left'], Constant(1)),
+                                          (facet_lookup['S_left'], Constant(1))],
                     'flux': [(facet_lookup['F_right'], Constant(0)),
                             (facet_lookup['S_right'], Constant(0)),
                             (facet_lookup['F_bottom'], Constant(0)),
@@ -870,7 +870,7 @@ def PVSbrain_simulation(args):
     cf_0 = Expression('x[0]<= 50e-4 ? exp(-a*pow(x[0]-b, 2)): 0 ', degree=2, a=1/2/(2e-4)**2, b=0, Rv=Rv, Rpvs=Rpvs)
 
     #Gaussian on the right side
-    cf_0 = Expression('exp(-a*pow(x[0]-b, 2)) ', degree=2, a=1/2/(150e-4)**2, b=L, Rv=Rv, Rpvs=Rpvs)
+    #cf_0 = Expression('exp(-a*pow(x[0]-b, 2)) ', degree=2, a=1/2/(150e-4)**2, b=L, Rv=Rv, Rpvs=Rpvs)
 
     # 1 in the PVS
     #cf_0 = Expression('x[1]<= Rpvs ? 1 : 0 ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss, Rv=Rv, Rpvs=Rpvs)
@@ -999,10 +999,21 @@ def PVSbrain_simulation(args):
     cycletimes=[]
 
 
-    while time < 2*period+tshift:
-        time+=dt
+    Nsteps=int(period/dt)
+
+    sum_eta=project(Constant((0,0)),Va_full)
+
+    file_cumul=File(outputfolder+'fields'+'/cumul_meshdef.pvd')
+
+    sum_eta.rename("cumul_mesh_def", "tmp")
+    file_cumul << (sum_eta, 0)
+
+
+
+    for it in range(1,4*Nsteps+1):
+        time=it*dt+tshift
         timestep+=1
-        print('time', time-tshift)
+        print('time', it*dt)
 
         # Update boundary conditions
         for expr in driving_expressions:
@@ -1032,6 +1043,8 @@ def PVSbrain_simulation(args):
 
         #CHECK project or asign ?
         eta_n=project(mask_solid*etas_n+mask_fluid*etaf_n,Va_full)#etaf_n
+
+        sum_eta=project(sum_eta+eta_n,Va_full)
 
         #This is quite long
         ALE.move(mesh_f, etaf_n)
@@ -1090,50 +1103,59 @@ def PVSbrain_simulation(args):
 
         porositys_n.assign(porositys_)
 
+
         ### Save the data needed for the adv_diff solver into h5 files
         ## On the second period
-        if time>period+tshift :
-            cycletimes.append(time-period-tshift) # I substract period and t shift in order to have times in [0, T]
+        if it>Nsteps:
+            cycletimes.append((it-Nsteps)*dt)
             advvel_file.write(advection_velocity.vector(), "/values_{}".format(len(cycletimes)))
             porosity_file.write(porosity_.vector(), "/values_{}".format(len(cycletimes)))
             meshdeformation_file.write(eta_n.vector(), "/values_{}".format(len(cycletimes)))
             #cPickle.dump(cycletimes, open("times.cpickle", "w"))        # Save output
 
+
         ## Save the outputs in vtk format    
         if(timestep % int(toutput_cycle/dt) == 0):
 
-            logging.info("\n*** save output time %e s"%(time-tshift))
-            logging.info("number of time steps %i"%timestep)
+            logging.info("\n*** save output time %e s"%(it*dt))
+            logging.info("number of time steps %i"%(it*dt))
 
             # may report Courant number or other important values that indicate how is doing the run
 
             uf_n.rename("vf", "tmp")
             pf_n.rename("pf", "tmp")
     
-            uf_out << (uf_n, time-tshift)
-            pf_out << (pf_n, time-tshift)
+            uf_out << (uf_n, it*dt)
+            pf_out << (pf_n, it*dt)
 
 
             etaf_n.rename("fluid_def", "tmp")
-            File(outputfolder+'fields'+'/fluid_def.pvd') << (etaf_n, time-tshift)
+            File(outputfolder+'fields'+'/fluid_def.pvd') << (etaf_n, it*dt)
 
             etas_n.rename("us", "tmp")
             us_n.rename("qs", "tmp")
             ps_n.rename("ps", "tmp")
 
-            etas_out << (etas_n, time-tshift)
-            qs_out << (us_n, time-tshift)
-            ps_out << (ps_n, time-tshift)
+            etas_out << (etas_n, it*dt)
+            qs_out << (us_n, it*dt)
+            ps_out << (ps_n, it*dt)
 
 
             porosity_n.rename("phi", "tmp")
-            phi_out << (porosity_n, time-tshift)
+            phi_out << (porosity_n, it*dt)
 
             advection_velocity.rename("adv_vel", "tmp")
-            File(outputfolder+'fields'+'/adv_vel.pvd') << (advection_velocity, time-tshift)
+            File(outputfolder+'fields'+'/adv_vel.pvd') << (advection_velocity, it*dt)
 
             eta_n.rename("mesh_def", "tmp")
-            File(outputfolder+'fields'+'/mesh_def.pvd') << (eta_n, time-tshift)
+            File(outputfolder+'fields'+'/mesh_def.pvd') << (eta_n, it*dt)
+
+            sum_eta.rename("cumul_mesh_def", "tmp")
+            file_cumul << (sum_eta, it*dt)
+
+        if (it % Nsteps)==0 : 
+            sum_eta=project(Constant((0,0)),Va_full)
+
 
 
     logging.info(title1("Advection - diffusion up to the end "))
