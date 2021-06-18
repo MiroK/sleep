@@ -299,6 +299,9 @@ def PVSbrain_simulation(args):
         mesh_model2d(model, tags, h5_filename)
 
         mesh, markers, lookup = load_mesh2d(h5_filename)
+
+        from IPython import embed
+        embed()
         
         gmsh.finalize()
 
@@ -464,6 +467,9 @@ def PVSbrain_simulation(args):
 
     c_n =  project(cf_0,Ct)#
 
+    File('initial_reg.pvd') << c_n
+    exit()
+    
     #Initial deformation of the fluid domain
     # We start at a time shift
     tshift=0 # 

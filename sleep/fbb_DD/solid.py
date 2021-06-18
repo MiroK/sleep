@@ -126,7 +126,6 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
     # Temporal integration loop
     T0 = parameters['T0']
     for k in range(parameters['nsteps']):
-        T0 += dt(0)
         # Update source if possible
         for foo in bdry_expressions + [f1, f2]:
             hasattr(foo, 't') and setattr(foo, 't', T0)
@@ -134,6 +133,8 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
 
         assembler.assemble(b)
         solver.solve(wh_0.vector(), b)
+        T0 += dt(0)
+        
         k % 10 == 0 and info('  Biot at step (%d, %g) |uh|=%g' % (k, T0, wh_0.vector().norm('l2')))    
 
     eta_h, u_h, p_h = wh_0.split(deepcopy=True)
