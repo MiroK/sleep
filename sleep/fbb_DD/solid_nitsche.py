@@ -181,7 +181,7 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters, nitsche_penalty)
     return eta_h, u_h, p_h, T0
 
 
-def mms_solid(parameters):
+def mms_solid(parameters, round_top=False):
     '''Method of manufactured solutions on [0, 1]^2'''
     mesh = UnitSquareMesh(2, 2)  
     V = VectorFunctionSpace(mesh, 'CG', 2)  # Displacement, Flux
@@ -232,7 +232,14 @@ def mms_solid(parameters):
     #  4
     # 1 2
     #  3 so that
-    normals = [Constant((-1, 0)), Constant((1, 0)), Constant((0, -1)), Constant((0, 1))]
+    if not round_top:
+        normals = [Constant((-1, 0)), Constant((1, 0)), Constant((0, -1)), Constant((0, 1))]
+    else:
+        x, y = SpatialCoordinate(mesh)
+        radius = Constant(sqrt(0.5**2 + 1**2))
+        normals = [Constant((-1, 0)), Constant((1, 0)), Constant((0, -1)),
+                   as_vector((x-Constant(0.5), y))/radius]
+        
     normal_tractions = [as_expr(dot(n, dot(sigma_p(eta, p), n))) for n in normals]
     normal_displacements = [as_expr(dot(n, eta)) for n in normals]
     
@@ -254,13 +261,15 @@ def mms_solid(parameters):
 
 if __name__ == '__main__':
     from sleep.mesh import load_mesh2d
+
+    round_top = True
     
     parameters = {'kappa': Constant(1),
                   'mu': Constant(1),
                   'lmbda': Constant(1),
                   'alpha': Constant(1),
                   's0': Constant(1)}
-    data = mms_solid(parameters)
+    data = mms_solid(parameters, round_top=round_top)
     
     eta_exact, u_exact, p_exact  = data['solution']
     f1, f2 = data['force']
@@ -275,9 +284,10 @@ if __name__ == '__main__':
                                                                          'normal_displacements',
                                                                          'tangent_displacements'))
 
-    Eelm = VectorElement('Lagrange', triangle, 2)
-    Velm = FiniteElement('Raviart-Thomas', triangle, 1)
-    Qelm = FiniteElement('Discontinuous Lagrange', triangle, 0)
+    cell = triangle
+    Eelm = VectorElement('Lagrange', cell, 2)
+    Velm = FiniteElement('Raviart-Thomas', cell, 1)
+    Qelm = FiniteElement('Discontinuous Lagrange', cell, 0)
 
     Welm = MixedElement([Eelm, Velm, Qelm])
 
@@ -285,20 +295,27 @@ if __name__ == '__main__':
     parameters['nsteps'] = int(1E-4/parameters['dt'])
     parameters['T0'] = 0.
 
-    for scale in (1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125):
-        path = '/home/fenics/shared/sleep/sleep/mesh/test/square_domain_{}.h5'.format(scale)
+    if round_top:
+        template = '/home/fenics/shared/sleep/sleep/mesh/test/round_domain_{}.h5'
+    else:
+        template = '/home/fenics/shared/sleep/sleep/mesh/test/square_domain_{}.h5'        
+
+    scales = (1.0, 0.5, 0.25, 0.125, 0.0625)# , 0.03125)
+    for scale in scales:
+        path = template.format(scale)
         
         mesh, markers, lookup = load_mesh2d(path)
         bdries = markers[1]
 
-    #for n in (4, 8, 16, 32, 64):
-        #mesh = UnitSquareMesh(n, n)
-        # Setup similar to coupled problem ...
-        #bdries = MeshFunction('size_t', mesh, mesh.topology().dim()-1, 0)
-        #CompiledSubDomain('near(x[0], 0)').mark(bdries, 1)
-        #CompiledSubDomain('near(x[0], 1)').mark(bdries, 2)
-        #CompiledSubDomain('near(x[1], 0)').mark(bdries, 3)
-        #CompiledSubDomain('near(x[1], 1)').mark(bdries, 4)
+    # This is with structured mesh
+    # for n in (4, 8, 16, 32, 64):
+    #     mesh = UnitSquareMesh(n, n)
+        
+    #     bdries = MeshFunction('size_t', mesh, mesh.topology().dim()-1, 0)
+    #     CompiledSubDomain('near(x[0], 0)').mark(bdries, 1)
+    #     CompiledSubDomain('near(x[0], 1)').mark(bdries, 2)
+    #     CompiledSubDomain('near(x[1], 0)').mark(bdries, 3)
+    #     CompiledSubDomain('near(x[1], 1)').mark(bdries, 4)
 
         # Reset time
         for things in data.values():
@@ -325,7 +342,7 @@ if __name__ == '__main__':
         W = FunctionSpace(mesh, Welm)
         ans = solve_solid(W, f1, f2, eta_0, p_0, bdries=bdries, bcs=bcs,
                           parameters=parameters,
-                          nitsche_penalty=100)  # NOTE: this might need to be adjusted
+                          nitsche_penalty=200)  # NOTE: this might need to be adjusted
         # depending on the material parameter values
 
         eta_h, u_h, p_h, time = ans
@@ -338,14 +355,20 @@ if __name__ == '__main__':
 
     # ----
 
-    n = 128
-    mesh = UnitSquareMesh(n, n)
-    # Setup similar to coupled problem ...
-    bdries = MeshFunction('size_t', mesh, mesh.topology().dim()-1, 0)
-    CompiledSubDomain('near(x[0], 0)').mark(bdries, 1)
-    CompiledSubDomain('near(x[0], 1)').mark(bdries, 2)
-    CompiledSubDomain('near(x[1], 0)').mark(bdries, 3)
-    CompiledSubDomain('near(x[1], 1)').mark(bdries, 4)
+    # n = 128
+    # mesh = UnitSquareMesh(n, n)
+    # # Setup similar to coupled problem ...
+    # bdries = MeshFunction('size_t', mesh, mesh.topology().dim()-1, 0)
+    # CompiledSubDomain('near(x[0], 0)').mark(bdries, 1)
+    # CompiledSubDomain('near(x[0], 1)').mark(bdries, 2)
+    # CompiledSubDomain('near(x[1], 0)').mark(bdries, 3)
+    # CompiledSubDomain('near(x[1], 1)').mark(bdries, 4)
+
+    scale = scales[-1]
+    path = template.format(scale)
+        
+    mesh, markers, lookup = load_mesh2d(path)
+    bdries = markers[1]
 
     dt = 1E-2
     for _ in range(4):
@@ -375,7 +398,7 @@ if __name__ == '__main__':
         W = FunctionSpace(mesh, Welm)
         ans = solve_solid(W, f1, f2, eta_0, p_0, bdries=bdries, bcs=bcs,
                           parameters=parameters,
-                          nitsche_penalty=100)
+                          nitsche_penalty=200)
 
         eta_h, u_h, p_h, time = ans
         eta_exact.time, u_exact.time, p_exact.time = (time, )*3
