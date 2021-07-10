@@ -74,8 +74,8 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters, nitsche_penalty)
                             for bc in (displacement_bcs, traction_bcs, pressure_bcs, flux_bcs)),
                            [])
     # Nitsche is special
-    [bdry_expressions.extend(val) for val in nitsche_t_bcs]
-
+    # We have (tag, (vel_data, stress_data))
+    [bdry_expressions.extend(val[1]) for val in nitsche_t_bcs]
     # FEM ---
     eta, u, p = TrialFunctions(W)
     phi, v, q = TestFunctions(W)
@@ -262,7 +262,7 @@ def mms_solid(parameters, round_top=False):
 if __name__ == '__main__':
     from sleep.mesh import load_mesh2d
 
-    round_top = True
+    round_top = False
     
     parameters = {'kappa': Constant(1),
                   'mu': Constant(1),
@@ -381,13 +381,14 @@ if __name__ == '__main__':
             for thing in things:
                 thing.time = 0.
 
-        # Elasticity: displacement bottom, traction for rest
-        # Darcy: pressure bottom and top, flux on sides
         bcs = {'elasticity': {'displacement': [(3, eta_exact)],
-                              'traction': [(1, tractions[1]), (2, tractions[2]), (4, tractions[4])]},
+                              'traction': [(1, tractions[1]), (2, tractions[2])],
+                              # Nitsche data is a pair of value for eta.t and sigma.n.n
+                              'nitsche_t': [(4, (tangent_displacements[4], normal_tractions[4]))],
+                              },
                'darcy': {'pressure': [(1, p_exact), (2, p_exact)],
                          'flux': [(3, u_exact), (4, u_exact)]}}
-
+                
         # Get the initial conditions
         E = FunctionSpace(mesh, Eelm)
         Q = FunctionSpace(mesh, Qelm)
@@ -398,7 +399,7 @@ if __name__ == '__main__':
         W = FunctionSpace(mesh, Welm)
         ans = solve_solid(W, f1, f2, eta_0, p_0, bdries=bdries, bcs=bcs,
                           parameters=parameters,
-                          nitsche_penalty=200)
+                          nitsche_penalty=500)
 
         eta_h, u_h, p_h, time = ans
         eta_exact.time, u_exact.time, p_exact.time = (time, )*3
@@ -410,7 +411,3 @@ if __name__ == '__main__':
         print('|eta-eta_h|_1', e_eta, '|u-uh|_div', e_u, '|p-ph|_0', e_p, '#dofs', W.dim())
         
         dt = dt/2
-
-    # for i, (num, true) in enumerate(zip((eta_h, u_h, p_h), (eta_exact, u_exact, p_exact))):
-    #     File('x%d_num.pvd' % i) << num
-    #     File('x%d_true.pvd' % i) << interpolate(true, num.function_space())
