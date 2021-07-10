@@ -262,7 +262,7 @@ if __name__ == '__main__':
         # Errors
         e_eta = errornorm(eta_exact, eta_h, 'H1', degree_rise=2)        
         e_p = errornorm(p_exact, p_h, 'H1', degree_rise=2)        
-        print('|eta-eta_h|_1', e_eta, '|p-ph|_0', e_p, '#dofs', W.dim())
+        print('|eta-eta_h|_1', e_eta, '|p-ph|_1', e_p, '#dofs', W.dim())
 
 
     # ----
@@ -311,6 +311,6 @@ if __name__ == '__main__':
         e_eta = errornorm(eta_exact, eta_h, 'H1', degree_rise=2)        
         e_p = errornorm(p_exact, p_h, 'H1', degree_rise=2)
         print('\tdt=%.2E T=%.2f nsteps=%d' %  (dt, p_exact.time, parameters['nsteps']))
-        print('|eta-eta_h|_1', e_eta, '|p-ph|_0', e_p, '#dofs', W.dim())
+        print('|eta-eta_h|_1', e_eta, '|p-ph|_1', e_p, '#dofs', W.dim())
         
         dt = dt/2
