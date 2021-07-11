@@ -183,7 +183,7 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters, nitsche_penalty)
         # We do a wishful thinking hoping that the Nitsche contribs to
         # the schur complement can be hidden with the mass matrix
         for tag, (vel_data, stress_data) in nitsche_t_bcs:
-
+            # NOTE: sigma_B.n x n has not contrib to pressure!
             a_prec += (-inner(wedge(dot(sigma_B(eta, p), n), n), wedge(phi, n))*ds(tag)
                        -inner(wedge(dot(sigma_B(phi, q), n), n), wedge(eta, n))*ds(tag)
                        + Constant(nitsche_penalty)/hF*inner(wedge(eta, n), wedge(phi, n))*ds(tag)
