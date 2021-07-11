@@ -30,7 +30,7 @@ print = PETSc.Sys.Print
 
 def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
     '''Return displacement, pressure and final time'''
-    info('Solving Biot for %d unknowns' % W.dim())
+    print('Solving Biot for %d unknowns' % W.dim())
     # NOTE: this is time dependent problem which we solve with 
     # parameters['dt'] for parameters['nsteps'] time steps and to 
     # update time in f1, f2 or the expressions bcs the physical time is
@@ -149,8 +149,7 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
         ksp.setOperators(A.mat(), B.mat())
         ksp.setInitialGuessNonzero(True)  # For time dep problem
 
-        V_dofs, Q_dofs = (W.sub(i).dofmap().dofs()
-                          for i in range(2))
+        V_dofs, Q_dofs = (W.sub(i).dofmap().dofs() for i in range(2))
 
         pc = ksp.getPC()
         pc.setType(PETSc.PC.Type.FIELDSPLIT)
@@ -192,11 +191,13 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
         
         niters.append(solver.solve(wh_0.vector(), b))
         T0 += dt(0)
-        
-        k % 10 == 0 and info('  Biot at step (%d, %g) |uh|=%g' % (k, T0, wh_0.vector().norm('l2')))
-        k % 10 == 0 and info('  KSP stats MIN/MEAN/MAX (%d|%g|%d) %d' % (
-            np.min(niters), np.mean(niters), np.max(niters), len(niters)
-        )) == None and niters.clear()
+
+        if k % 10 == 0:
+            print('  Biot at step (%d, %g) |uh|=%g' % (k, T0, wh_0.vector().norm('l2')))
+            print('  KSP stats MIN/MEAN/MAX (%d|%g|%d) %d' % (
+                np.min(niters), np.mean(niters), np.max(niters), len(niters)
+            ))
+            niters.clear()
 
     eta_h, p_h = wh_0.split(deepcopy=True)
         

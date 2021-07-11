@@ -8,7 +8,6 @@ from functools import reduce
 def preduce(comm, op, iterable):
     '''Reduce by op on procs of comm'''
     local = reduce(op, iterable)
-    print(comm.rank, local, '<<<')
     all_local = comm.allgather(local)
     return reduce(op, all_local)
 
