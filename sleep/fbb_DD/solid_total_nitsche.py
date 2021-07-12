@@ -1,10 +1,16 @@
+import petsc4py, sys
+petsc4py.init(sys.argv)
+from petsc4py import PETSc
+
 from dolfin import *
-from functools import reduce
+from sleep.utils import preduce
 import itertools
 import operator
 import sympy as sp
 import ulfy  # https://github.com/MiroK/ulfy
+import numpy as np
 
+print = PETSc.Sys.Print
 # We solve Biot in (0, T) x Omega
 # 
 # -div(sigma(eta, p)) = f1                             [elasticity]
@@ -27,14 +33,15 @@ import ulfy  # https://github.com/MiroK/ulfy
 
 def solve_solid(W, f1, f2, eta_0, pT_0, p_0, bdries, bcs, parameters, nitsche_penalty):
     '''Return displacement, percolation velocity, pressure and final time'''
-    info('Solving Biot for %d unknowns' % W.dim())
+    print('Solving Biot for %d unknowns' % W.dim())
     # NOTE: this is time dependent problem which we solve with 
     # parameters['dt'] for parameters['nsteps'] time steps and to 
     # update time in f1, f2 or the expressions bcs the physical time is
     # set as parameters['T0'] + dt*(k-th step)
     mesh = W.mesh()
+    comm = mesh.mpi_comm()
 
-    needed = set(bdries.array()) - set((0, ))    
+    needed = preduce(comm, operator.or_, (set(bdries.array()), )) - set((0, ))    
     # Validate elasticity bcs
     bcs_E = bcs['elasticity']
     assert all(k in ('displacement', 'traction', 'nitsche_t') for k in bcs_E)
@@ -51,7 +58,7 @@ def solve_solid(W, f1, f2, eta_0, pT_0, p_0, bdries, bcs, parameters, nitsche_pe
     for this, that in itertools.combinations(tags, 2):
         if this and that: assert not this & that
 
-    assert needed == reduce(operator.or_, tags)
+    assert needed == preduce(comm, operator.or_, tags)
 
     # Validate Darcy bcs
     bcs_D = bcs['darcy']
@@ -67,7 +74,7 @@ def solve_solid(W, f1, f2, eta_0, pT_0, p_0, bdries, bcs, parameters, nitsche_pe
     for this, that in itertools.combinations(tags, 2):
         if this and that: assert not this & that
 
-    assert needed == reduce(operator.or_, tags), (needed, reduce(operator.or_, tags))
+    assert needed == preduce(comm, operator.or_, tags), (needed, preduce(comm, operator.or_, tags))
 
     # Collect bc values for possible temporal update in the integration
     bdry_expressions = sum(([item[1] for item in bc]
@@ -166,10 +173,71 @@ def solve_solid(W, f1, f2, eta_0, pT_0, p_0, bdries, bcs, parameters, nitsche_pe
     A, b = PETScMatrix(), PETScVector()
     # Assemble once and setup solver for it
     assembler.assemble(A)
-    solver = LUSolver(A, 'mumps')
+    if parameters.get('solver', 'direct') == 'direct':
+        solver = LUSolver(A, 'mumps')
+    else:
+        # Lee Mardal Winther preconditioner (assuming here that we are
+        # fixing displacement somewhere). Again wishful thinking handling
+        # of Nitsche
+        a_prec = (2*mu*inner(sym(grad(eta)), sym(grad(phi)))*dx  # Full H1 here?
+                  + (1 + 1/2/mu)*inner(pT, qT)*dx
+                  + inner((s0 + alpha**2/lmbda)*p, q)*dx + inner(kappa*dt*grad(p), grad(q))*dx)
+        
+        for tag, (vel_data, stress_data) in nitsche_t_bcs:
+            # NOTE: this has pT, qT but nxn should mean that there is no
+            # contrip to offdiagonal block
+            a_prec += (-inner(wedge(dot(sigma_B(eta, pT), n), n), wedge(phi, n))*ds(tag)
+                       -inner(wedge(dot(sigma_B(phi, qT), n), n), wedge(eta, n))*ds(tag)
+                       + Constant(nitsche_penalty)/hF*inner(wedge(eta, n), wedge(phi, n))*ds(tag)
+            )
 
+        B, b_dummy = PETScMatrix(), PETScVector()
+        assemble_system(a_prec, L, bcs_strong, A_tensor=B, b_tensor=b_dummy)
+
+        solver = PETScKrylovSolver()
+        
+        ksp = solver.ksp()
+        ksp.setType(PETSc.KSP.Type.MINRES)
+        ksp.setOperators(A.mat(), B.mat())
+        ksp.setInitialGuessNonzero(True)  # For time dep problem
+
+        V_dofs, QT_dofs, Q_dofs = (W.sub(i).dofmap().dofs() for i in range(3))
+
+        pc = ksp.getPC()
+        pc.setType(PETSc.PC.Type.FIELDSPLIT)
+        is_V = PETSc.IS().createGeneral(V_dofs) 
+        is_QT = PETSc.IS().createGeneral(QT_dofs)       
+        is_Q = PETSc.IS().createGeneral(Q_dofs)
+        pc.setFieldSplitIS(('0', is_V), ('1', is_QT), ('2', is_Q))
+        pc.setFieldSplitType(PETSc.PC.CompositeType.ADDITIVE) 
+
+        ksp.setUp()
+        # ... all blocks inverted AMG sweeps
+        subksps = pc.getFieldSplitSubKSP()
+        # NOTE: ideally this would be done with multigrid but let's see
+        # how far LU will take us. For amg also consider grad-grad to help
+        # it
+        subksps[0].setType('preonly')        
+        subksps[0].getPC().setType('lu')
+        
+        subksps[1].setType('preonly')
+        subksps[1].getPC().setType('hypre')
+
+        subksps[2].setType('preonly')
+        subksps[2].getPC().setType('hypre')
+
+        opts = PETSc.Options()
+        # opts.setValue('ksp_monitor_true_residual', None)
+        opts.setValue('ksp_rtol', 1E-8)
+        opts.setValue('ksp_atol', 1E-10)
+
+        pc.setFromOptions()
+        ksp.setFromOptions()
+
+    
     # Temporal integration loop
     T0 = parameters['T0']
+    niters = []
     for k in range(parameters['nsteps']):
         # Update source if possible
         for foo in bdry_expressions + [f1, f2]:
@@ -177,10 +245,15 @@ def solve_solid(W, f1, f2, eta_0, pT_0, p_0, bdries, bcs, parameters, nitsche_pe
             hasattr(foo, 'time') and setattr(foo, 'time', T0)
 
         assembler.assemble(b)
-        solver.solve(wh_0.vector(), b)
+        niters.append(solver.solve(wh_0.vector(), b))
         T0 += dt(0)
-        
-        k % 10 == 0 and info('  Biot at step (%d, %g) |uh|=%g' % (k, T0, wh_0.vector().norm('l2')))    
+       
+        if k % 10 == 0:
+            print('  Biot at step (%d, %g) |uh|=%g' % (k, T0, wh_0.vector().norm('l2')))
+            print('  KSP stats MIN/MEAN/MAX (%d|%g|%d) %d' % (
+                np.min(niters), np.mean(niters), np.max(niters), len(niters)
+            ))
+            niters.clear()
 
     eta_h, pT_h, p_h = wh_0.split(deepcopy=True)
         
@@ -189,7 +262,7 @@ def solve_solid(W, f1, f2, eta_0, pT_0, p_0, bdries, bcs, parameters, nitsche_pe
 
 def mms_solid(parameters, round_top=False):
     '''Method of manufactured solutions on [0, 1]^2'''
-    mesh = UnitSquareMesh(2, 2)  
+    mesh = UnitSquareMesh(MPI.comm_self, 2, 2)  
     V = VectorFunctionSpace(mesh, 'CG', 2)  # Displacement, Flux
     Q = FunctionSpace(mesh, 'CG', 2)  # Pressure
     # Coefficient space
@@ -281,6 +354,8 @@ if __name__ == '__main__':
                   'alpha': Constant(5),
                   's0': Constant(0.2)}
     data = mms_solid(parameters, round_top=round_top)
+
+    parameters['solver'] = 'iterative'
     
     eta_exact, u_exact, p_exact, pT_exact  = data['solution']
     f1, f2 = data['force']
