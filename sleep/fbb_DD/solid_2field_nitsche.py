@@ -3,12 +3,13 @@ petsc4py.init(sys.argv)
 from petsc4py import PETSc
 
 from dolfin import *
-from sleep.utils import preduce
+from sleep.utils import preduce, KSP_CVRG_REASONS
 import itertools
 import operator
 import sympy as sp
 import ulfy  # https://github.com/MiroK/ulfy
 import numpy as np
+from collections import Counter
 
 print = PETSc.Sys.Print
 
@@ -175,7 +176,8 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters, nitsche_penalty)
     assembler.assemble(A)
 
     if parameters.get('solver', 'direct') == 'direct':
-        solver = LUSolver(A, 'mumps')
+        solver = PETScLUSolver(A, 'mumps')
+        ksp = solver.ksp()
     else:
         schur_bit = sqrt(lmbda + 2*mu/len(eta))
         # Preconditioner operator following https://arxiv.org/abs/1705.08842
@@ -224,15 +226,15 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters, nitsche_penalty)
 
         opts = PETSc.Options()
         # opts.setValue('ksp_monitor_true_residual', None)
-        opts.setValue('ksp_rtol', 1E-8)
-        opts.setValue('ksp_atol', 1E-10)
+        opts.setValue('ksp_rtol', 1E-14)
+        opts.setValue('ksp_atol', 1E-8)
 
         pc.setFromOptions()
         ksp.setFromOptions()
 
     # Temporal integration loop
     T0 = parameters['T0']
-    niters = []
+    niters, reasons = [], []
     for k in range(parameters['nsteps']):
         # Update source if possible
         for foo in bdry_expressions + [f1, f2]:
@@ -241,6 +243,7 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters, nitsche_penalty)
 
         assembler.assemble(b)
         niters.append(solver.solve(wh_0.vector(), b))
+        reasons.append(ksp.getConvergedReason())
         T0 += dt(0)
 
         if k % 10 == 0:
@@ -248,7 +251,10 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters, nitsche_penalty)
             print('  KSP stats MIN/MEAN/MAX (%d|%g|%d) %d' % (
                 np.min(niters), np.mean(niters), np.max(niters), len(niters)
             ))
+            for reason, count in Counter(reasons).items():
+                print('      KSP cvrg reason %s -> %d' % (KSP_CVRG_REASONS[reason], count))
             niters.clear()
+            reasons.clear()
 
     eta_h, p_h = wh_0.split(deepcopy=True)
         

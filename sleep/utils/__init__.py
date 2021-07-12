@@ -11,6 +11,29 @@ def preduce(comm, op, iterable):
     all_local = comm.allgather(local)
     return reduce(op, all_local)
 
+
+KSP_CVRG_REASONS = {
+    1: 'KSP_CONVERGED_RTOL_NORMAL',
+    9: 'KSP_CONVERGED_ATOL_NORMAL',
+    2: 'KSP_CONVERGED_RTOL' ,         
+    3: 'KSP_CONVERGED_ATOL',         
+    4: 'KSP_CONVERGED_ITS',                     
+    5: 'KSP_CONVERGED_CG_NEG_CURVE',            
+    6: 'KSP_CONVERGED_CG_CONSTRAINED',          
+    7: 'KSP_CONVERGED_STEP_LENGTH',      
+    8: 'KSP_CONVERGED_HAPPY_BREAKDOW',          
+    -2: 'KSP_DIVERGED_NULL',                     
+    -3: 'KSP_DIVERGED_ITS',                      
+    -4: 'KSP_DIVERGED_DTOL',                      
+    -5: 'KSP_DIVERGED_BREAKDOWN',                
+    -6: 'KSP_DIVERGED_BREAKDOWN_BICG',          
+    -7: 'KSP_DIVERGED_NONSYMMETRIC',             
+    -8: 'KSP_DIVERGED_INDEFINITE_PC',            
+    -9: 'KSP_DIVERGED_NANORINF',                 
+    -10: 'KSP_DIVERGED_INDEFINITE_MA',             
+    -11: 'KSP_DIVERGED_PC_FAILED'
+}
+
 # --------------------------------------------------------------------
 
 if __name__ == '__main__':
