@@ -1,9 +1,12 @@
+import petsc4py, sys
+petsc4py.init(sys.argv)
+from petsc4py import PETSc
+
 from dolfin import *
 from sleep.utils import preduce
 import itertools
 import operator
 import sympy as sp
-from petsc4py import PETSc
 import numpy as np
 import ulfy  # https://github.com/MiroK/ulfy
 
