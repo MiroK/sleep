@@ -72,7 +72,7 @@ def title1(string):
 
 
 def PVSbrain_simulation(args):
-    """ Solve the flow and tracer transport in the PVS (Stockes domain) and the brain (Biot domain) :
+    """ Solve the flow and tracer transport in the PVS (Stokes domain) and the brain (Biot domain) :
     Outputs :
     - a logfile with information about the simulation
     - .pvd files at specified args.toutput time period with the u, p and c fields in stokes domain and u, p , q, phi and c fields in Biot domain
@@ -684,6 +684,7 @@ def PVSbrain_simulation(args):
     tn = sympy.symbols("tn")
     tnp1 = sympy.symbols("tnp1")
     sin = sympy.sin
+    cos = sympy.cos
     sqrt = sympy.sqrt
 
 
@@ -691,18 +692,18 @@ def PVSbrain_simulation(args):
 
     # Vessel radius
 
-    functionR = Rv*(1+sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)])) # displacement
+    functionR = Rv*(1+sum([a*cos(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)])) # displacement
     R_vessel = sympy.printing.ccode(functionR)
 
     functionV = sympy.diff(functionR,tn) # velocity
     V_vessel = sympy.printing.ccode(functionV)
 
     #Delta U for ALE at the vessel boundary
-    functionUALE=Rv*(1+sum([a*sin(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)]))- Rv*(1+sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))
+    functionUALE=Rv*(1+sum([a*cos(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)]))- Rv*(1+sum([a*cos(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))
     UALE_vessel = sympy.printing.ccode(functionUALE)   
 
     vf_bottom = Expression(('0',V_vessel ), tn = 0, degree=2)   # no slip no gap condition at vessel wall 
-    uale_bottom = Expression(('0',UALE_vessel ), tn = 0, tnp1=1, degree=2) # displacement for ALE at vessel wall 
+    uale_bottom = Expression(('0',UALE_vessel ), tn = 0, tnp1=1, degree=3) # displacement for ALE at vessel wall 
 
 
     driving_expressions = (vf_bottom,uale_bottom)
@@ -839,6 +840,8 @@ def PVSbrain_simulation(args):
     logging.info("Pressure : zero field")
     uf_n = project(Constant((0, 0)), Wf.sub(0).collapse())
     pf_n =  project(Constant(0), Wf.sub(1).collapse())
+    uf_ni = project(Constant((0, 0)), Wf.sub(0).collapse()) #intermediate
+    pf_ni =  project(Constant(0), Wf.sub(1).collapse())
 
     logging.info("\n * Porous medium")
     logging.info("Fluid velocity : zero field")
@@ -848,6 +851,10 @@ def PVSbrain_simulation(args):
     etas_n=project(Constant((0, 0)), Ws.sub(0).collapse())
     us_n=project(Constant((0, 0)), Ws.sub(1).collapse())
     ps_n=project(Constant(0), Ws.sub(2).collapse())
+
+    etas_ni=project(Constant((0, 0)), Ws.sub(0).collapse())
+    us_ni=project(Constant((0, 0)), Ws.sub(1).collapse())
+    ps_ni=project(Constant(0), Ws.sub(2).collapse())
 
     etas_0 = project(Constant((0, 0)), Ws.sub(0).collapse()) # always at the begining of a time step
 
@@ -903,32 +910,33 @@ def PVSbrain_simulation(args):
 
     #Initial deformation of the fluid domain
     # We start at a time shift
-    tshift= 1/4/fi[0] 
+    tshift= 0 #1/4/fi[0] 
 
-    # Update boundary conditions
-    for expr in driving_expressions:
-        hasattr(expr, 'tn') and setattr(expr, 'tn', 0)
-        hasattr(expr, 'tnp1') and setattr(expr, 'tnp1', tshift)
+    if abs(tshift):
+        # Update boundary conditions
+        for expr in driving_expressions:
+            hasattr(expr, 'tn') and setattr(expr, 'tn', 0)
+            hasattr(expr, 'tnp1') and setattr(expr, 'tnp1', tshift)
 
-    #Solve ALE and move mesh 
-    # Transfert solid displacement at the interface to the fluid domain for ALE
-    transfer_into(eta_interface, Constant((0,0)), boundaries)
+        #Solve ALE and move mesh 
+        # Transfert solid displacement at the interface to the fluid domain for ALE
+        transfer_into(eta_interface, Constant((0,0)), boundaries)
 
-    etaf_n = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale,
-                      parameters=ale_parameters)
+        etaf_n = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale,
+                        parameters=ale_parameters)
 
-    #CHECK is it okay to do that ? the extrapolated part is set to 0 with the mask function
-    etaf_n.set_allow_extrapolation(True)
+        #CHECK is it okay to do that ? the extrapolated part is set to 0 with the mask function
+        etaf_n.set_allow_extrapolation(True)
 
-    #CHECK project or asign ?
-    eta_n=project(mask_fluid*etaf_n,Va_full)
+        #CHECK project or asign ?
+        eta_n=project(mask_fluid*etaf_n,Va_full)
 
-    ALE.move(mesh, eta_n)
-    ALE.move(mesh_f, etaf_n)
+        ALE.move(mesh, eta_n)
+        ALE.move(mesh_f, etaf_n)
 
-    #it is needed for the mask function to work properly
-    mesh.bounding_box_tree().build(mesh) 
-    mesh_f.bounding_box_tree().build(mesh_f)
+        #it is needed for the mask function to work properly
+        mesh.bounding_box_tree().build(mesh) 
+        mesh_f.bounding_box_tree().build(mesh_f)
 
 
     # Save initial state
@@ -979,7 +987,7 @@ def PVSbrain_simulation(args):
 
 
 
-    logging.info(title1("Stokes - Biot over 2 cycles"))
+    
 
     # Time loop
     time = tshift
@@ -987,10 +995,14 @@ def PVSbrain_simulation(args):
 
 
     ##############
-    # First we solve the Biot stokes problem on 2 periods 
+    # First we solve the Biot stokes problem on Ncyclces periods 
     # We dont take one period to avoid the effect of initial conditions.
     # We store the adv velocity and the deformation of the mesh in a file
     ##################
+
+    N_cycles_ini=5
+
+    logging.info(title1("Stokes - Biot over "+str(N_cycles_ini)+" cycles"))
 
     advvel_file = HDF5File(mesh.mpi_comm(), outputfolder+"advection_velocity.h5", "w")
     meshdeformation_file= HDF5File(mesh.mpi_comm(), outputfolder+"mesh_deformation.h5", "w")
@@ -1002,6 +1014,7 @@ def PVSbrain_simulation(args):
     Nsteps=int(period/dt)
 
     sum_eta=project(Constant((0,0)),Va_full)
+    sum_etas=project(Constant((0,0)),Va_s)
 
     file_cumul=File(outputfolder+'fields'+'/cumul_meshdef.pvd')
 
@@ -1009,16 +1022,28 @@ def PVSbrain_simulation(args):
     file_cumul << (sum_eta, 0)
 
 
+    Rvpos=0
+    xy = mesh_f.coordinates().copy()          
+    x, y = xy.T    
+    ymin=y.min()
+    Rvsimu=ymin
 
-    for it in range(1,4*Nsteps+1):
+    for it in range(1,N_cycles_ini*Nsteps+1):
         time=it*dt+tshift
         timestep+=1
         print('time', it*dt)
 
         # Update boundary conditions
         for expr in driving_expressions:
-            hasattr(expr, 'tn') and setattr(expr, 'tn', time)
-            hasattr(expr, 'tnp1') and setattr(expr, 'tnp1', time+dt)
+            hasattr(expr, 'tn') and setattr(expr, 'tn', time-dt)
+            hasattr(expr, 'tnp1') and setattr(expr, 'tnp1', time)
+        
+        Rvpos+=uale_bottom((0,0,0))[1]
+
+        print('Rvpos',Rvpos)
+
+
+
 
         if lateral_bc=='resistance' :
             z, r = SpatialCoordinate(mesh_f)
@@ -1045,40 +1070,67 @@ def PVSbrain_simulation(args):
         eta_n=project(mask_solid*etas_n+mask_fluid*etaf_n,Va_full)#etaf_n
 
         sum_eta=project(sum_eta+eta_n,Va_full)
+        
 
         #This is quite long
         ALE.move(mesh_f, etaf_n)
         ALE.move(mesh_s, interpolate(etas_n, Va_s))
+        ALE.move(mesh, eta_n)
 
         #is needed for the masks
         mesh_f.bounding_box_tree().build(mesh_f)
         mesh_s.bounding_box_tree().build(mesh_s)
+        mesh.bounding_box_tree().build(mesh)
 
         n_f, n_p = FacetNormal(mesh_f), FacetNormal(mesh_s)
 
-        #Solve fluid problem        
-            
-        # Impose the velocity in the fluid at the interface, given dU/dt of the interface and the percolation velocity at last time step  
-        # should do it with a Nistche approach ??
-        transfer_into(vf_interface, etas_n/Constant(dt) + us_n, boundaries)
+        xy = mesh.coordinates().copy()  
+        x, y = xy.T            
+        ymin=y.min()
 
-        uf_, pf_ = solve_fluid(Wf, u_n=uf_n, p_n=pf_n,  f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_fluid,
-                                parameters=fluid_parameters)
+        print('Rvpossimu',ymin-Rvsimu)
+
+        # Update current solution
+        uf_ni.assign(uf_n)
+        pf_ni.assign(pf_n)
+
+        etas_ni.assign(etas_n)
+        us_ni.assign(us_n)
+        ps_ni.assign(ps_n)
+
+        for steps in range(4) :
+
+            #Solve fluid problem        
+                
+            # Impose the velocity in the fluid at the interface, given dU/dt of the interface and the percolation velocity at last time step  
+            # should do it with a Nistche approach ??
+            transfer_into(vf_interface, etas_ni/Constant(dt) + us_ni, boundaries)
+
+            uf_, pf_ = solve_fluid(Wf, u_n=uf_n, p_n=pf_n,  f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_fluid,
+                                    parameters=fluid_parameters)
 
 
-        # Solve porous problem
-        # Transfer the fluid pressure from fluid domain
-        # should do it with a Nistche approach ??
-        transfer_into(p_interface, pf_, boundaries)   
+            # Solve porous problem
+            # Transfer the fluid pressure from fluid domain
+            # should do it with a Nistche approach ??
+            transfer_into(p_interface, pf_ni, boundaries)   
 
-        # and normal stress from fluid domain
-        # CHECK update n_f ? after ALE
-        transfer_into(traction_interface,-dot(sigma_f(uf_, pf_), n_f),boundaries) 
+            # and normal stress from fluid domain
+            # CHECK update n_f ? after ALE
+            transfer_into(traction_interface,-dot(sigma_f(uf_ni, pf_ni), n_f),boundaries) 
 
-        # todo : I would like to add zero tangential displacement : dirichlet or Nistche ?
+            # todo : I would like to add zero tangential displacement : dirichlet or Nistche ?
 
-        etas_, us_, ps_ = solve_solid(Ws, f1=Constant((0, 0)), f2=Constant(0), eta_0=etas_0, p_0=ps_n,
-                                                bdries=solid_bdries, bcs=bcs_solid, parameters=solid_parameters)
+            etas_, us_, ps_ = solve_solid(Ws, f1=Constant((0, 0)), f2=Constant(0), eta_0=etas_0, p_0=ps_n,
+                                                    bdries=solid_bdries, bcs=bcs_solid, parameters=solid_parameters)
+
+            # Update intermediate solution
+            uf_ni.assign(uf_)
+            pf_ni.assign(pf_)
+
+            etas_ni.assign(etas_)
+            us_ni.assign(us_)
+            ps_ni.assign(ps_)
 
         # Update current solution
         uf_n.assign(uf_)
@@ -1104,10 +1156,24 @@ def PVSbrain_simulation(args):
         porositys_n.assign(porositys_)
 
 
+        
+
+        #reset sum displacement at cycles
+        if (it % Nsteps)==0:
+        #    etas_n=project(-sum_etas,Va_s)
+
+            sum_etas=project(Constant((0,0)),Va_s)
+            sum_eta=project(Constant((0,0)),Va_full)
+            
         ### Save the data needed for the adv_diff solver into h5 files
-        ## On the second period
-        if it>Nsteps:
-            cycletimes.append((it-Nsteps)*dt)
+        ## On the last period
+        if it>(N_cycles_ini-1)*Nsteps:
+
+            # correction for last time step of the cycle
+            if it >(N_cycles_ini-1)*Nsteps + Nsteps-1:
+                # we add a little to eta_n in order to recover the initial state of the cycle
+                eta_n=project(eta_n-sum_eta,Va_full)
+            cycletimes.append((it-(N_cycles_ini-1)*Nsteps)*dt)
             advvel_file.write(advection_velocity.vector(), "/values_{}".format(len(cycletimes)))
             porosity_file.write(porosity_.vector(), "/values_{}".format(len(cycletimes)))
             meshdeformation_file.write(eta_n.vector(), "/values_{}".format(len(cycletimes)))
@@ -1118,7 +1184,7 @@ def PVSbrain_simulation(args):
         if(timestep % int(toutput_cycle/dt) == 0):
 
             logging.info("\n*** save output time %e s"%(it*dt))
-            logging.info("number of time steps %i"%(it*dt))
+            logging.info("number of time steps %i"%(it))
 
             # may report Courant number or other important values that indicate how is doing the run
 
@@ -1153,10 +1219,12 @@ def PVSbrain_simulation(args):
             sum_eta.rename("cumul_mesh_def", "tmp")
             file_cumul << (sum_eta, it*dt)
 
-        if (it % Nsteps)==0 : 
-            sum_eta=project(Constant((0,0)),Va_full)
 
 
+
+    #####################################
+    ### RUN STEP 2
+    #################################
 
     logging.info(title1("Advection - diffusion up to the end "))
 
@@ -1168,7 +1236,6 @@ def PVSbrain_simulation(args):
 
 
 
-    # Here I dont know if there will be several dt for advdiff and fluid solver
     while n_cycle < N_cycles-1:
         n_cycle+=1
 
@@ -1324,7 +1391,7 @@ if __name__ == '__main__':
 
     my_parser.add_argument('-s_biot','--biot_progression',
                         type=float,
-                        default=2.5,
+                        default=2.0,
                         help='progression coefficient for the mesh in the biot domain')
 
     my_parser.add_argument('-nl','--N_axial',
