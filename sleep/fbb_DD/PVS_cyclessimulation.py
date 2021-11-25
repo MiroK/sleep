@@ -93,11 +93,11 @@ def PVS_simulation(args):
         os.makedirs(outputfolder)
 
 
-    if not os.path.exists(outputfolder+'/profiles'):
-        os.makedirs(outputfolder+'/profiles')
+    if not os.path.exists(outputfolder+'profiles'):
+        os.makedirs(outputfolder+'profiles')
 
-    if not os.path.exists(outputfolder+'/fields'):
-        os.makedirs(outputfolder+'/fields')
+    if not os.path.exists(outputfolder+'fields'):
+        os.makedirs(outputfolder+'fields')
 
     # Create output files
 
