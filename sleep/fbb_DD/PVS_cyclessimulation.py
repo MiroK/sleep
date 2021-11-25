@@ -12,7 +12,7 @@ from sleep.fbb_DD.advection import solve_adv_diff_cyl as solve_adv_diff
 from sleep.fbb_DD.fluid import solve_fluid_cyl as solve_fluid
 from sleep.fbb_DD.ale import solve_ale_cyl as solve_ale
 from sleep.utils import EmbeddedMesh
-from sleep.mesh import load_mesh2d
+#from sleep.mesh import load_mesh2d
 from dolfin import *
 import sleep.fbb_DD.cylindrical as cyl
 
@@ -285,8 +285,8 @@ def PVS_simulation(args):
 
         #spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=sleepcycle.generatedata(2)
         #spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=awakecycle.generatedata(7)
-        spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=NREMcycle.generatedata(7)
-        #spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=REMcycle.generatedata(4)
+        #spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=NREMcycle.generatedata(7)
+        spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=REMcycle.generatedata(4)
 
         # adjust last time in order to be able to interpolate
         spantime[-1]=tfinal+2*dt
