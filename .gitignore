@@ -30,7 +30,7 @@ Dockerfile
 
 #fenics
 sleep/fbb_DD/jitfailure*
-sleep/script/jitfailure*
+sleep/scripts/jitfailure*
 
 #outputs
 *.pvtu
