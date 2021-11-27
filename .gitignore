@@ -24,3 +24,12 @@
 *.code-workspace
 
 Dockerfile
+
+#spyder
+.spyproject/*
+
+#fenics
+sleep/fbb_DD/jitfailure*
+
+#outputs
+*.pvtu
