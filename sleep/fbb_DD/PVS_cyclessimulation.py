@@ -265,7 +265,7 @@ def PVS_simulation(args):
         # for now I implement it in the hard way here
 
         ##
-        print('Home made frequency and amplitude law')
+        logging.info('creation of cycle')
 
         #create several states
         Awake=State(name='Awake',Rv=5.15e-4,h0=2.98e-4,freqtable={'cardiac':1/0.1,'resp':1/0.34,'LF':1/2.25,'VLF':1/6.11},amptable={'cardiac':2.87/100,'resp':1.71/100,'LF':4.31/100,'VLF':0.0})
@@ -283,10 +283,19 @@ def PVS_simulation(args):
         NREMcycle=Cycle([(NREM,50),(Awake,10)],transitiontime=2) # 7 times
         REMcycle=Cycle([(REM,110),(Awake,10)],transitiontime=2) # 4 times
 
-        #spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=sleepcycle.generatedata(2)
-        #spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=awakecycle.generatedata(7)
-        #spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=NREMcycle.generatedata(7)
-        spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=REMcycle.generatedata(4)
+
+        if args.cycle=='sleep':
+            logging.info('*** Simulation of normal sleep cycle ')
+            spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=sleepcycle.generatedata(2)
+        if args.cycle=='awake':
+            logging.info('*** Simulation of awake  cycle ')
+            spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=awakecycle.generatedata(7)
+        if args.cycle=='NREM':
+            logging.info('*** Simulation of NREM sleep cycle ')
+            spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=NREMcycle.generatedata(7)        
+        if args.cycle=='REM':
+            logging.info('*** Simulation of REM sleep cycle ')
+            spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=REMcycle.generatedata(4)
 
         # adjust last time in order to be able to interpolate
         spantime[-1]=tfinal+2*dt
@@ -1063,6 +1072,11 @@ if __name__ == '__main__':
                         type=float,
                         default=1,
                         help='Initial value of the concentration')
+
+    my_parser.add_argument('-cycle',
+                        type=str,
+                        default='REM',
+                        help='cycle type')
 
     args = my_parser.parse_args()
 
