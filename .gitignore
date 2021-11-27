@@ -30,6 +30,13 @@ Dockerfile
 
 #fenics
 sleep/fbb_DD/jitfailure*
+sleep/script/jitfailure*
 
 #outputs
 *.pvtu
+
+#batch scripts
+*.sh
+
+#notebooks
+*.ipynb
