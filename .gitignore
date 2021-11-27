@@ -30,3 +30,12 @@
 *.code-workspace
 
 Dockerfile
+
+#spyder
+.spyproject/*
+
+#fenics
+*/jitfaillure*
+
+#outputs
+*.pvtu
