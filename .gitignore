@@ -35,7 +35,7 @@ Dockerfile
 .spyproject/*
 
 #fenics
-*/jitfailure*
+sleep/fbb_DD/jitfailure*
 
 #outputs
 *.pvtu
