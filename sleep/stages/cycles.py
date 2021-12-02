@@ -65,23 +65,16 @@ class Cycle():
 if __name__ == '__main__':
 
     #create several states
-    Awake=State(Rv=6.4e-4,h0=2.7e-4,freqtable={'cardiac':10.1,'resp':3.03,'LF':0.476,'VLF':0.167},amptable={'cardiac':0.04,'resp':0.021,'LF':0.035,'VLF':0.047})
-    REM=State(Rv=7.68e-4,h0=2.214e-4,freqtable={'cardiac':11.36,'resp':2.941,'LF':0.476,'VLF':0.130},amptable={'cardiac':0.042,'resp':0.024,'LF':0.027,'VLF':0.046})
-    NREM=State(Rv=6.4e-4,h0=2.619e-4,freqtable={'cardiac':10,'resp':2.941,'LF':0.417,'VLF':0.147},amptable={'cardiac':0.037,'resp':0.019,'LF':0.064,'VLF':0.098})
-    IS=State(Rv=7.04e-4,h0=2.511e-4,freqtable={'cardiac':10.1,'resp':2.941,'LF':0.435,'VLF':0.154},amptable={'cardiac':0.042,'resp':0.024,'LF':0.027,'VLF':0.046})
-
-    Whisking=State(Rv=6.592e-4,h0=2.646e-4,freqtable={'cardiac':10.1,'resp':3.03,'LF':0.476,'VLF':0.167},amptable={'cardiac':0.04,'resp':0.021,'LF':0.035,'VLF':0.047})
-    Locomotion=State(Rv=7.168e-4,h0=2.538e-4,freqtable={'cardiac':10.1,'resp':3.03,'LF':0.476,'VLF':0.167},amptable={'cardiac':0.04,'resp':0.021,'LF':0.035,'VLF':0.047})
-
+    Awake=State(name='Awake',Rv=5.15e-4,h0=3.5e-4,freqtable={'cardiac':1/0.1,'resp':1/0.34,'LF':1/2.25,'VLF':1/6.11},amptable={'cardiac':2.87/100,'resp':1.71/100,'LF':4.31/100,'VLF':0.0})
+    NREM=State(name='NREM',Rv=5.52e-4,h0=3.44e-4,freqtable={'cardiac':1/0.11,'resp':1/0.34,'LF':1/2.46,'VLF':1/6.7},amptable={'cardiac':2.02/100,'resp':1.5/100,'LF':6.88/100,'VLF':0.0})
+    IS=State(name='IS',Rv=5.6e-4,h0=3.04e-4,freqtable={'cardiac':1/0.11,'resp':1/0.34,'LF':1/2.41,'VLF':1/6.37},amptable={'cardiac':2.07/100,'resp':1.6/100,'LF':6.71/100,'VLF':0.0})
+    REM=State(name='REM',Rv=5.97e-4,h0=2.26e-4,freqtable={'cardiac':1/0.1,'resp':1/0.34,'LF':1/2.22,'VLF':1/7.75},amptable={'cardiac':2.73/100,'resp':1.78/100,'LF':2.21/100,'VLF':0.0})
 
     #create a cycle
-    sleepcycle=Cycle([(NREM,50),(IS,40),(REM,110),(Awake,10)],transitiontime=2)
-    awakecycle=Cycle([(NREM,50),(IS,40),(REM,110),(Awake,10)],transitiontime=2)
-    NREMcycle=Cycle([(NREM,50),(Awake,10)],transitiontime=2)
-    REMcycle=Cycle([(REM,110),(Awake,10)],transitiontime=2)
+    REMcycle=Cycle([(REM,110),(Awake,10)],transitiontime=2) # 2 times
 
-    spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=sleepcycle.generatedata(2)
+    spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=REMcycle.generatedata(2)
 
     print(spantime)
-    print(listspanf)
+    print(spanh0)
     
