@@ -268,7 +268,7 @@ def PVS_simulation(args):
         logging.info('creation of cycle')
 
         #create several states
-        Awake=State(name='Awake',Rv=5.15e-4,h0=2.98e-4,freqtable={'cardiac':1/0.1,'resp':1/0.34,'LF':1/2.25,'VLF':1/6.11},amptable={'cardiac':2.87/100,'resp':1.71/100,'LF':4.31/100,'VLF':0.0})
+        Awake=State(name='Awake',Rv=5.15e-4,h0=3.5e-4,freqtable={'cardiac':1/0.1,'resp':1/0.34,'LF':1/2.25,'VLF':1/6.11},amptable={'cardiac':2.87/100,'resp':1.71/100,'LF':4.31/100,'VLF':0.0})
         NREM=State(name='NREM',Rv=5.52e-4,h0=3.44e-4,freqtable={'cardiac':1/0.11,'resp':1/0.34,'LF':1/2.46,'VLF':1/6.7},amptable={'cardiac':2.02/100,'resp':1.5/100,'LF':6.88/100,'VLF':0.0})
         IS=State(name='IS',Rv=5.6e-4,h0=3.04e-4,freqtable={'cardiac':1/0.11,'resp':1/0.34,'LF':1/2.41,'VLF':1/6.37},amptable={'cardiac':2.07/100,'resp':1.6/100,'LF':6.71/100,'VLF':0.0})
         REM=State(name='REM',Rv=5.97e-4,h0=2.26e-4,freqtable={'cardiac':1/0.1,'resp':1/0.34,'LF':1/2.22,'VLF':1/7.75},amptable={'cardiac':2.73/100,'resp':1.78/100,'LF':2.21/100,'VLF':0.0})
@@ -278,10 +278,10 @@ def PVS_simulation(args):
         Whisking=State(name='Whisking',Rv=6.41e-4,h0=3.16e-4,freqtable={'cardiac':1/0.1,'resp':1/0.32,'LF':1/1.74,'VLF':1/4.69},amptable={'cardiac':3.74/100,'resp':2.27/100,'LF':4.72/100,'VLF':0.0})
 
         #create a cycle
-        sleepcycle=Cycle([(NREM,50),(IS,40),(REM,110),(Awake,10)],transitiontime=2) # 2 times
+        sleepcycle=Cycle([(Awake,10),(NREM,50),(IS,40),(REM,110)],transitiontime=2) # 2 times
         awakecycle=Cycle([(Quiet,10),(Whisking,5),(Locomotion,30),(Whisking,5),(Quiet,5),(Whisking,5)],transitiontime=2) # 7 times
-        NREMcycle=Cycle([(NREM,50),(Awake,10)],transitiontime=2) # 7 times
-        REMcycle=Cycle([(REM,110),(Awake,10)],transitiontime=2) # 4 times
+        NREMcycle=Cycle([(Awake,10),(NREM,50)],transitiontime=2) # 7 times
+        REMcycle=Cycle([(Awake,10),(REM,110)],transitiontime=2) # 4 times
 
 
         if args.cycle=='sleep':
@@ -298,7 +298,7 @@ def PVS_simulation(args):
             spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=REMcycle.generatedata(4)
 
         # adjust last time in order to be able to interpolate
-        spantime[-1]=tfinal+2*dt
+        spantime[-1]=max(tfinal+2*dt,spantime[-1])
 
         from scipy.interpolate import interp1d
         varflist={}
@@ -308,8 +308,11 @@ def PVS_simulation(args):
             varflist[freq]=interp1d(spantime,listspanf[freq])
             varalist[freq]=interp1d(spantime,listspana[freq])
 
+
+
         varh0=interp1d(spantime,spanh0)
         varRpvs=interp1d(spantime,spanRpvs)
+
 
         #varda=interp1d(spantime,dadt,kind="previous")
 
@@ -318,9 +321,10 @@ def PVS_simulation(args):
         time=0 + np.arange(int((tfinal+2*dt)*fs))/fs # longer than the simulation time because we need tn+1 for the U ALE computation
 
 
+
         modulation={}
         for freq in listspanf:
-            modulation[freq]=varalist[freq](time)*np.sin(2*np.pi*np.cumsum(varflist[freq](time))/fs)     
+            modulation[freq]=varalist[freq](time)*np.sin(2*np.pi*np.cumsum(varflist[freq](time))/fs)
 
         OuterRadius=varRpvs(time)
         InnerRadius=varRpvs(time) -varh0(time)*(1+modulation['cardiac']+modulation['resp']+modulation['LF']+modulation['VLF'])
@@ -443,8 +447,7 @@ def PVS_simulation(args):
     # number of vessels
     Nvessels=6090
     # initial volume of CSF
-    # we take arbitraily a volume arround ten times larger than the PVSs volume
-    VCSF=40e-3 /40
+    VCSF=40e-3 
     # initial pressure of the CSF
     PCSF=4 # mmHg
     # initial volume of arterial blood
@@ -839,7 +842,7 @@ def PVS_simulation(args):
 
 
         c_, T0= solve_adv_diff(Ct, velocity=uf_-eta_f/Constant(dt), phi=Constant(1), f=Constant(0), c_0=c_n, phi_0=Constant(1),
-                                  bdries=fluid_bdries, bcs=bcs_tracer, parameters=tracer_parameters)
+                            bdries=fluid_bdries, bcs=bcs_tracer, parameters=tracer_parameters)
 
 
         Massflow=assemble(2*pi*r*dot(uf_-eta_f/Constant(dt), n)*c_*ds(facet_lookup['x_min']))
@@ -847,15 +850,18 @@ def PVS_simulation(args):
 
 
         if sas_bc=='scenarioD' :
-            print('updating CSF pressure')
-            # update CSF pressure
-            PCSF+=dt/Ccsf*(Qprod-Qout+2*np.pi*leq*Rvfunction(time)*dRvdtfunction(time))
+
             # update CSF outflow
-            Qout = (PCSF-Pss)/Rcsf
+            Qout = max((PCSF-Pss)/Rcsf,0) # valve
+            # update CSF pressure
+            PCSF += dt/Ccsf*(Qprod-Qout)+ np.pi*leq*(Rvfunction(time+dt)**2-Rvfunction(time)**2)/Ccsf
+            #PCSF += dt/Ccsf*(Qprod-Qout)+2*np.pi*leq/Ccsf*Rvfunction(time)*(Rvfunction(time+dt)-Rvfunction(time))
+
+            
 
 
         if sas_bc=='scenarioA' :
-            if FluidFlow>0 :
+            if FluidFlow>0 :     
                 # mainly advection
                 mout+=dt*Nvessels*Massflow
 
@@ -1088,4 +1094,4 @@ if __name__ == '__main__':
 
 # python3 PVS_cyclessimulation.py -j REMsleepnew -lpvs 200e-4 -c0init constant -c0value 50 -sasbc scenarioA -fadata yes -tend 420 -toutput 1 -dt 1e-2 -r -1 -nr 6 -nl 100 -d 2e-7
 
-#python3 PVS_cyclessimulation.py -j testSAS -lpvs 200e-4 -c0init constant -c0value 50 -sasbc scenarioA -fi 10 -ai 0.01 -tend 1 -toutput 1e-2 -dt 1e-2 -r -1 -nr 6 -nl 100 -d 2e-7 
+#python3 PVS_cyclessimulation.py -j testSAS -lpvs 200e-4 -c0init constant -c0value 50 -sasbc scenarioD -fi 10 -ai 0.01 -tend 1 -toutput 1e-2 -dt 1e-2 -r -1 -nr 6 -nl 100 -d 2e-7 
