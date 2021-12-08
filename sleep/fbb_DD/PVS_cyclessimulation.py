@@ -286,16 +286,16 @@ def PVS_simulation(args):
 
         if args.cycle=='sleep':
             logging.info('*** Simulation of normal sleep cycle ')
-            spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=sleepcycle.generatedata(2)
+            spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=sleepcycle.generatedata(int(tfinal/210)+1)
         if args.cycle=='awake':
             logging.info('*** Simulation of awake  cycle ')
-            spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=awakecycle.generatedata(7)
+            spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=awakecycle.generatedata(int(tfinal/60)+1)
         if args.cycle=='NREM':
             logging.info('*** Simulation of NREM sleep cycle ')
-            spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=NREMcycle.generatedata(7)        
+            spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=NREMcycle.generatedata(int(tfinal/60)+1)        
         if args.cycle=='REM':
             logging.info('*** Simulation of REM sleep cycle ')
-            spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=REMcycle.generatedata(4)
+            spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=REMcycle.generatedata(int(tfinal/120)+1)
 
         # adjust last time in order to be able to interpolate
         spantime[-1]=max(tfinal+2*dt,spantime[-1])
