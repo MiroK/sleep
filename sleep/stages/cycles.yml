@@ -1,31 +1,33 @@
-  - name : normalsleep
+- name : normalsleep
 
-    architecture:
+  architecture:
         
-        - stage : Awake
-          duration : 10
+    - stage : Awake
+      duration : 10
 
-        - stage : NREM
-          duration : 50
+    - stage : NREM
+      duration : 50
 
-        - stage : IS
-          duration : 35
+    - stage : IS
+      duration : 35
 
-        - stage : REM
-          duration : 105
+    - stage : REM
+      duration : 105
 
 
-  - name : quietwake
+- name : quietwake
 
-    architecture:
+  architecture:
         
-        - stage : Quiet
-          duration : 200
+    - stage : Quiet
+      duration : 200
 
+    - stage : Quiet
+      duration : 200
 
-  - name : lowlocomotion
+- name : lowlocomotion
 
-    architecture:
+  architecture:
         
         - stage : Quiet
           duration : 191.5
@@ -33,9 +35,9 @@
         - stage : Locomotion
           duration : 8.5
 
-  - name : normallocomotion
+- name : normallocomotion
 
-    architecture:
+  architecture:
         
         - stage : Quiet
           duration : 178
@@ -43,9 +45,9 @@
         - stage : Locomotion
           duration : 22
 
-  - name : highlocomotion
+- name : highlocomotion
 
-    architecture:
+  architecture:
         
         - stage : Quiet
           duration : 166.5
@@ -53,9 +55,9 @@
         - stage : Locomotion
           duration : 33.5
 
-  - name : fractlocomotion
+- name : fractlocomotion
 
-    architecture:
+  architecture:
         
         - stage : Quiet
           duration : 13.8
@@ -64,9 +66,9 @@
           duration : 2.8
 
 
-  - name : humansleep
+- name : humansleep
 
-    architecture:
+  architecture:
         
         - stage : Awake
           duration : 10
@@ -80,7 +82,7 @@
         - stage : REM
           duration : 40
 
-         - stage : Awake
+        - stage : Awake
           duration : 10
 
         - stage : NREM
@@ -92,7 +94,7 @@
         - stage : REM
           duration : 80        
 
-         - stage : Awake
+        - stage : Awake
           duration : 10
 
         - stage : NREM
@@ -104,9 +106,9 @@
         - stage : REM
           duration : 120 
 
-  - name : REMsleep
+- name : REMsleep
 
-    architecture:
+  architecture:
         
         - stage : Awake
           duration : 10
@@ -114,9 +116,9 @@
         - stage : REM
           duration : 190
 
-  - name : NREMsleep
+- name : NREMsleep
 
-    architecture:
+  architecture:
         
         - stage : Awake
           duration : 10
@@ -124,9 +126,9 @@
         - stage : NREM
           duration : 190
 
-  - name : noarrousalsleep
+- name : noarrousalsleep
 
-    architecture:
+  architecture:
         
         - stage : Awake
           duration : 10
