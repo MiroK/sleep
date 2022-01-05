@@ -267,7 +267,6 @@ def PVS_simulation(args):
         ##
         logging.info('creation of cycle')
 
-<<<<<<< HEAD
 
         cycleObj=ReadCycle('../stages/cycles.yml',args.cycle)
         totalcycletime=np.sum(cycleObj.durations)
@@ -275,37 +274,6 @@ def PVS_simulation(args):
 
         logging.info('*** Simulation of %s cycle '%cycleObj.name)
 
-=======
-        #create several states
-        Awake=State(name='Awake',Rv=5.15e-4,h0=3.5e-4,freqtable={'cardiac':1/0.1,'resp':1/0.34,'LF':1/2.25,'VLF':1/6.11},amptable={'cardiac':2.87/100,'resp':1.71/100,'LF':4.31/100,'VLF':0.0})
-        NREM=State(name='NREM',Rv=5.52e-4,h0=3.44e-4,freqtable={'cardiac':1/0.11,'resp':1/0.34,'LF':1/2.46,'VLF':1/6.7},amptable={'cardiac':2.02/100,'resp':1.5/100,'LF':6.88/100,'VLF':0.0})
-        IS=State(name='IS',Rv=5.6e-4,h0=3.04e-4,freqtable={'cardiac':1/0.11,'resp':1/0.34,'LF':1/2.41,'VLF':1/6.37},amptable={'cardiac':2.07/100,'resp':1.6/100,'LF':6.71/100,'VLF':0.0})
-        REM=State(name='REM',Rv=5.97e-4,h0=2.26e-4,freqtable={'cardiac':1/0.1,'resp':1/0.34,'LF':1/2.22,'VLF':1/7.75},amptable={'cardiac':2.73/100,'resp':1.78/100,'LF':2.21/100,'VLF':0.0})
-
-        Quiet=State(name='Quiet',Rv=6.03e-4,h0=3.51e-4,freqtable={'cardiac':1/0.12,'resp':1/0.34,'LF':1/2.27,'VLF':1/6.58},amptable={'cardiac':2.61/100,'resp':1.44/100,'LF':4.3/100,'VLF':0.0})
-        Locomotion=State(name='Locomotion',Rv=6.93e-4,h0=2.619e-4,freqtable={'cardiac':1/0.37,'resp':1/0.37,'LF':1/1.54,'VLF':1/6.17},amptable={'cardiac':3.01/100,'resp':6.95/100,'LF':10.59/100,'VLF':0.0})
-        Whisking=State(name='Whisking',Rv=6.41e-4,h0=3.16e-4,freqtable={'cardiac':1/0.1,'resp':1/0.32,'LF':1/1.74,'VLF':1/4.69},amptable={'cardiac':3.74/100,'resp':2.27/100,'LF':4.72/100,'VLF':0.0})
-
-        #create a cycle
-        sleepcycle=Cycle([(Awake,10),(NREM,50),(IS,40),(REM,110)],transitiontime=2) # 2 times
-        awakecycle=Cycle([(Quiet,10),(Whisking,5),(Locomotion,30),(Whisking,5),(Quiet,5),(Whisking,5)],transitiontime=2) # 7 times
-        NREMcycle=Cycle([(Awake,10),(NREM,50)],transitiontime=2) # 7 times
-        REMcycle=Cycle([(Awake,10),(REM,110)],transitiontime=2) # 4 times
-
-
-        if args.cycle=='sleep':
-            logging.info('*** Simulation of normal sleep cycle ')
-            spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=sleepcycle.generatedata(int(tfinal/210)+1)
-        if args.cycle=='awake':
-            logging.info('*** Simulation of awake  cycle ')
-            spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=awakecycle.generatedata(int(tfinal/60)+1)
-        if args.cycle=='NREM':
-            logging.info('*** Simulation of NREM sleep cycle ')
-            spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=NREMcycle.generatedata(int(tfinal/60)+1)        
-        if args.cycle=='REM':
-            logging.info('*** Simulation of REM sleep cycle ')
-            spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=REMcycle.generatedata(int(tfinal/120)+1)
->>>>>>> 5695cbb9dc4ce29f4a9e019475a95f9ea88d7ae5
 
         # adjust last time in order to be able to interpolate
         #spantime[-1]=max(tfinal+2*dt,spantime[-1])
@@ -828,16 +796,13 @@ def PVS_simulation(args):
         tracer_parameters["dt"]=dt
 
 
-        #### need to be different if the right BC is not no flux: Should be implemented in another way with dictionary entry per faces so we can change only one BC easily
-
-
         # If the fluid is exiting the PVS we compute the amount of mass entering the SAS. The tracer left BC is free.
         # If the fluid is entering the PVS then we impose the concentration in the SAS at the left BC.
 
         #Fluid flow at the BC
         FluidFlow=assemble(2*pi*r*dot(uf_, n)*ds(facet_lookup['x_min']))
 
-        # I guess n is directed in the outward direction
+        #  n is directed in the outward direction
 
         if FluidFlow>0 : 
 
@@ -847,9 +812,9 @@ def PVS_simulation(args):
                                 (facet_lookup['y_max'], Constant(0)),
                                 (facet_lookup['y_min'], Constant(0))]}
         else :
-            # let try a relaxation here
             cmean=assemble(2*pi*r*c_n*ds(facet_lookup['x_min']))/assemble(2*pi*r*Constant(1)*ds(facet_lookup['x_min']))
-            alpha=0.
+            # we allow the possibility to use a relaxation here
+            alpha=0. # 0 means no relaxation
             c_imposed=(1-alpha)*cSAS+alpha*cmean
 
             bcs_tracer = {'concentration': [(facet_lookup['x_min'], Constant(c_imposed))],
@@ -872,9 +837,7 @@ def PVS_simulation(args):
             Qout = max((PCSF-Pss)/Rcsf,0) # valve
             # update CSF pressure
             PCSF += dt/Ccsf*(Qprod-Qout)+ np.pi*leq*(Rvfunction(time+dt)**2-Rvfunction(time)**2)/Ccsf
-            #PCSF += dt/Ccsf*(Qprod-Qout)+2*np.pi*leq/Ccsf*Rvfunction(time)*(Rvfunction(time+dt)-Rvfunction(time))
-
-            
+                        
 
 
         if sas_bc=='scenarioA' :
@@ -882,7 +845,7 @@ def PVS_simulation(args):
                 # mainly advection
                 mout+=dt*Nvessels*Massflow
 
-            # Adding diffusion in both cases inflow and outflow (Should be imporant at the begining)
+            # lost mass in the PVS due to diffusion
             mout+=-dt*Nvessels*Massdiffusion
                 
 
