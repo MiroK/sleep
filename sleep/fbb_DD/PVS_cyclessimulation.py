@@ -16,6 +16,8 @@ from sleep.utils import EmbeddedMesh
 from dolfin import *
 import sleep.fbb_DD.cylindrical as cyl
 
+from sleep.stages.readConfig import ReadCycle
+
 
 
 # What are the conditions for time step ?
@@ -93,8 +95,8 @@ def PVS_simulation(args):
         os.makedirs(outputfolder)
 
 
-    if not os.path.exists(outputfolder+'profiles'):
-        os.makedirs(outputfolder+'profiles')
+    #if not os.path.exists(outputfolder+'profiles'):
+    #    os.makedirs(outputfolder+'profiles')
 
     if not os.path.exists(outputfolder+'fields'):
         os.makedirs(outputfolder+'fields')
@@ -248,8 +250,8 @@ def PVS_simulation(args):
 
     logging.info('\n * Cross section area parameters')
 
-    if args.fadata:
-        logging.info('frequency and amplitude data from '+args.fadata)
+    if args.cycle:
+        logging.info('frequency and amplitude data from cycle '+args.cycle)
         timedependentfa=True
     else :
         timedependentfa=False
@@ -261,44 +263,20 @@ def PVS_simulation(args):
         logging.info('phii (rad) : '+'%e '*len(phii)%tuple(phii))
 
     if timedependentfa:
-        # todo read this in a file
-        # for now I implement it in the hard way here
 
         ##
         logging.info('creation of cycle')
 
-        #create several states
-        Awake=State(name='Awake',Rv=5.15e-4,h0=3.5e-4,freqtable={'cardiac':1/0.1,'resp':1/0.34,'LF':1/2.25,'VLF':1/6.11},amptable={'cardiac':2.87/100,'resp':1.71/100,'LF':4.31/100,'VLF':0.0})
-        NREM=State(name='NREM',Rv=5.52e-4,h0=3.44e-4,freqtable={'cardiac':1/0.11,'resp':1/0.34,'LF':1/2.46,'VLF':1/6.7},amptable={'cardiac':2.02/100,'resp':1.5/100,'LF':6.88/100,'VLF':0.0})
-        IS=State(name='IS',Rv=5.6e-4,h0=3.04e-4,freqtable={'cardiac':1/0.11,'resp':1/0.34,'LF':1/2.41,'VLF':1/6.37},amptable={'cardiac':2.07/100,'resp':1.6/100,'LF':6.71/100,'VLF':0.0})
-        REM=State(name='REM',Rv=5.97e-4,h0=2.26e-4,freqtable={'cardiac':1/0.1,'resp':1/0.34,'LF':1/2.22,'VLF':1/7.75},amptable={'cardiac':2.73/100,'resp':1.78/100,'LF':2.21/100,'VLF':0.0})
 
-        Quiet=State(name='Quiet',Rv=6.03e-4,h0=3.51e-4,freqtable={'cardiac':1/0.12,'resp':1/0.34,'LF':1/2.27,'VLF':1/6.58},amptable={'cardiac':2.61/100,'resp':1.44/100,'LF':4.3/100,'VLF':0.0})
-        Locomotion=State(name='Locomotion',Rv=6.93e-4,h0=2.619e-4,freqtable={'cardiac':1/0.37,'resp':1/0.37,'LF':1/1.54,'VLF':1/6.17},amptable={'cardiac':3.01/100,'resp':6.95/100,'LF':10.59/100,'VLF':0.0})
-        Whisking=State(name='Whisking',Rv=6.41e-4,h0=3.16e-4,freqtable={'cardiac':1/0.1,'resp':1/0.32,'LF':1/1.74,'VLF':1/4.69},amptable={'cardiac':3.74/100,'resp':2.27/100,'LF':4.72/100,'VLF':0.0})
+        cycleObj=ReadCycle('../stages/cycles.yml',args.cycle)
+        totalcycletime=np.sum(cycleObj.durations)
+        spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=cycleObj.generatedata(int(tfinal/totalcycletime)+1)
 
-        #create a cycle
-        sleepcycle=Cycle([(Awake,10),(NREM,50),(IS,40),(REM,110)],transitiontime=2) # 2 times
-        awakecycle=Cycle([(Quiet,10),(Whisking,5),(Locomotion,30),(Whisking,5),(Quiet,5),(Whisking,5)],transitiontime=2) # 7 times
-        NREMcycle=Cycle([(Awake,10),(NREM,50)],transitiontime=2) # 7 times
-        REMcycle=Cycle([(Awake,10),(REM,110)],transitiontime=2) # 4 times
+        logging.info('*** Simulation of %s cycle '%cycleObj.name)
 
-
-        if args.cycle=='sleep':
-            logging.info('*** Simulation of normal sleep cycle ')
-            spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=sleepcycle.generatedata(int(tfinal/210)+1)
-        if args.cycle=='awake':
-            logging.info('*** Simulation of awake  cycle ')
-            spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=awakecycle.generatedata(int(tfinal/60)+1)
-        if args.cycle=='NREM':
-            logging.info('*** Simulation of NREM sleep cycle ')
-            spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=NREMcycle.generatedata(int(tfinal/60)+1)        
-        if args.cycle=='REM':
-            logging.info('*** Simulation of REM sleep cycle ')
-            spantime,listspana,listspanf,spanRv,spanh0,spanRpvs=REMcycle.generatedata(int(tfinal/120)+1)
 
         # adjust last time in order to be able to interpolate
-        spantime[-1]=max(tfinal+2*dt,spantime[-1])
+        #spantime[-1]=max(tfinal+2*dt,spantime[-1])
 
         from scipy.interpolate import interp1d
         varflist={}
@@ -516,19 +494,20 @@ def PVS_simulation(args):
     mesh_f= RectangleMesh(Point(0, Rvfunction(0)), Point(L, Rpvsfunction(0)), Nl, Nr)
 
     ## Refinement at the SAS boundary
-    x = mesh_f.coordinates()[:,0]
-    y = mesh_f.coordinates()[:,1]
+    if args.refineleft :
+        x = mesh_f.coordinates()[:,0]
+        y = mesh_f.coordinates()[:,1]
 
-    #Deformation of the mesh
+        #Deformation of the mesh
 
-    def deform_mesh(x, y):
-        x=L*(x/L)**2.5
-        return [x, y]
+        def deform_mesh(x, y):
+            x=L*(x/L)**2.5
+            return [x, y]
 
-    x_bar, y_bar = deform_mesh(x, y)
-    xy_bar_coor = np.array([x_bar, y_bar]).transpose()
-    mesh_f.coordinates()[:] = xy_bar_coor
-    mesh_f.bounding_box_tree().build(mesh_f)
+        x_bar, y_bar = deform_mesh(x, y)
+        xy_bar_coor = np.array([x_bar, y_bar]).transpose()
+        mesh_f.coordinates()[:] = xy_bar_coor
+        mesh_f.bounding_box_tree().build(mesh_f)
 
     fluid_bdries = MeshFunction("size_t", mesh_f, mesh_f.topology().dim()-1,0)
 
@@ -691,6 +670,12 @@ def PVS_simulation(args):
 
         ## Initialisation 
         c_n =  project(Constant(init_concentration_value),Ct)
+    elif init_concentration_type=='null' :
+        logging.info("Concentration : zero in the vessel")
+
+
+        ## Initialisation 
+        c_n =  project(Constant(0),Ct)
     else :
         logging.info("Concentration : Uniform profile (default)")
         logging.info("Value=%e"%0)
@@ -980,11 +965,6 @@ if __name__ == '__main__':
                         default=100e-4,
                         help='Length of the vessel')
 
-    my_parser.add_argument('-fadata',
-                        type=str,
-                        default='',
-                        help='file with frequency amplitude data, ignored if empty string')
-
     my_parser.add_argument('-ai',
                         type=float,
                         nargs='+',
@@ -1081,8 +1061,13 @@ if __name__ == '__main__':
 
     my_parser.add_argument('-cycle',
                         type=str,
-                        default='REM',
-                        help='cycle type')
+                        default='REMsleep',
+                        help='cycle name, must be defined in the cycles.yml config file')
+    
+    my_parser.add_argument('-refineleft',
+                        type=bool,
+                        default=False,
+                        help='Refine the mesh on the left side')
 
     args = my_parser.parse_args()
 
@@ -1092,6 +1077,7 @@ if __name__ == '__main__':
     PVS_simulation(args)
 
 
-# python3 PVS_cyclessimulation.py -j REMsleepnew -lpvs 200e-4 -c0init constant -c0value 50 -sasbc scenarioA -fadata yes -tend 420 -toutput 1 -dt 1e-2 -r -1 -nr 6 -nl 100 -d 2e-7
+# python3 PVS_cyclessimulation.py -j REMsleepnew -lpvs 200e-4 -c0init constant -c0value 50 -sasbc scenarioA -cycle REMsleep -tend 420 -toutput 1 -dt 2e-2 -r -1 -nr 4 -nl 50 -d 2e-7
+# python3 PVS_cyclessimulation.py -j REMsleepin -lpvs 200e-4 -c0init null -c0value 50 -sasbc scenarioB -cycle REMsleep -tend 420 -toutput 1 -dt 2e-2 -r -1 -nr 4 -nl 50 -d 2e-7 -refineleft True
 
 #python3 PVS_cyclessimulation.py -j testSAS -lpvs 200e-4 -c0init constant -c0value 50 -sasbc scenarioD -fi 10 -ai 0.01 -tend 1 -toutput 1e-2 -dt 1e-2 -r -1 -nr 6 -nl 100 -d 2e-7 
