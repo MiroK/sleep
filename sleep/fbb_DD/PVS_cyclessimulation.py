@@ -104,12 +104,12 @@ def PVS_simulation(args):
     # Create output files
 
     #txt files
-    csv_p=open(args.output_folder+'/'+args.job_name+'_pressure.txt', 'w')
-    csv_u=open(args.output_folder+'/'+args.job_name+'_velocity.txt', 'w')
-    csv_c=open(args.output_folder+'/'+args.job_name+'_concentration.txt', 'w')
-    csv_rv=open(args.output_folder+'/'+args.job_name+'_radius.txt', 'w')
+    csv_p=open(args.output_folder+'/'+args.job_name+'_pressure.txt', 'w',0)
+    csv_u=open(args.output_folder+'/'+args.job_name+'_velocity.txt', 'w',0)
+    csv_c=open(args.output_folder+'/'+args.job_name+'_concentration.txt', 'w',0)
+    csv_rv=open(args.output_folder+'/'+args.job_name+'_radius.txt', 'w',0)
 
-    csv_mass=open(args.output_folder+'/'+args.job_name+'_mass.txt', 'w')
+    csv_mass=open(args.output_folder+'/'+args.job_name+'_mass.txt', 'w',0)
 
     #pvd files
     uf_out, pf_out= File(outputfolder+'fields'+'/uf.pvd'), File(outputfolder+'fields'+'/pf.pvd')
