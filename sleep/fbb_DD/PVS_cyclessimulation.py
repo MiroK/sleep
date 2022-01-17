@@ -407,7 +407,7 @@ def PVS_simulation(args):
 
     sas_bc=args.sasbc
     init_concentration_type=args.c0init
-    init_concentration_value=args.c0value
+    init_concentration_value=args.c0valuePVS
 
 
     logging.info('Left BC scenario :',sas_bc)
@@ -420,17 +420,21 @@ def PVS_simulation(args):
     if sas_bc=='scenarioA':
         cSAS=0
     else :
-        cSAS=init_concentration_value
+        cSAS=args.c0valueSAS
 
-    # number of vessels
+    # number of vessels used for mass balance
     Nvessels=6090
-    # initial volume of CSF
-    VCSF=40e-3 
+    # initial volume of CSF in PVS
+    VPVS=((np.pi*Rpvsfunction(0)**2)-(np.pi*Rvfunction(0)**2))*L*Nvessels
+
+    # initial volume of CSF in SAS : assumed to be 10 times larger than volume in PVS
+    VCSF=VPVS*10 #40e-3 
+
     # initial pressure of the CSF
     PCSF=4 # mmHg
     # initial volume of arterial blood
     Vblood=4e-3 # ml
-    # equivalent vessel length
+    # equivalent vessel length used for the compliance function and assessement of ICP
     leq=Vblood/(np.pi*Rvfunction(0)**2)
 
     # initial tracer mass in the CSF
@@ -658,7 +662,7 @@ def PVS_simulation(args):
 
     if init_concentration_type=='gaussian' :
         logging.info("Concentration : Gaussian profile")
-        logging.info("                Centered at mid length")
+        logging.info("                Centered at xi = %e"%xi_gauss)
         logging.info("                STD parameter = %e"%sigma_gauss)
         logging.info("                Max value=%e"%init_concentration_value)
 
@@ -1049,10 +1053,15 @@ if __name__ == '__main__':
                         default='scenarioA',
                         help='Choice of the scenario for the left concentration boundary condition')
 
-    my_parser.add_argument('-c0value',
+    my_parser.add_argument('-c0valueSAS',
+                        type=float,
+                        default=0,
+                        help='Initial value of the concentration in the SAS')
+
+    my_parser.add_argument('-c0valuePVS',
                         type=float,
                         default=1,
-                        help='Initial value of the concentration')
+                        help='Initial value of the concentration in the PVS')
 
     my_parser.add_argument('-cycle',
                         type=str,
