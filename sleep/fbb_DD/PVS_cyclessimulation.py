@@ -104,12 +104,12 @@ def PVS_simulation(args):
     # Create output files
 
     #txt files
-    csv_p=open(args.output_folder+'/'+args.job_name+'_pressure.txt', 'w',0)
-    csv_u=open(args.output_folder+'/'+args.job_name+'_velocity.txt', 'w',0)
-    csv_c=open(args.output_folder+'/'+args.job_name+'_concentration.txt', 'w',0)
-    csv_rv=open(args.output_folder+'/'+args.job_name+'_radius.txt', 'w',0)
+    csv_p=open(args.output_folder+'/'+args.job_name+'_pressure.txt', 'w')
+    csv_u=open(args.output_folder+'/'+args.job_name+'_velocity.txt', 'w')
+    csv_c=open(args.output_folder+'/'+args.job_name+'_concentration.txt', 'w')
+    csv_rv=open(args.output_folder+'/'+args.job_name+'_radius.txt', 'w')
 
-    csv_mass=open(args.output_folder+'/'+args.job_name+'_mass.txt', 'w',0)
+    csv_mass=open(args.output_folder+'/'+args.job_name+'_mass.txt', 'w')
 
     #pvd files
     uf_out, pf_out= File(outputfolder+'fields'+'/uf.pvd'), File(outputfolder+'fields'+'/pf.pvd')
@@ -926,7 +926,7 @@ def PVS_simulation(args):
             intc = 2*np.pi*assemble(r*c_*dx(mesh_f))
 
             csv_mass.write('%e, %e, %e, %e, %e, %e, %e, %e, %e\n'%(time,Nvessels*intc,m,mout,Nvessels*intc+m+mout, Nvessels*volume, VCSF,PCSF,Qout))
-
+            csv_mass.flush()
             
 
 
