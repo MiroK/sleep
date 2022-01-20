@@ -104,12 +104,12 @@ def PVS_simulation(args):
     # Create output files
 
     #txt files
-    csv_p=open(args.output_folder+'/'+args.job_name+'_pressure.txt', 'w')
-    csv_u=open(args.output_folder+'/'+args.job_name+'_velocity.txt', 'w')
-    csv_c=open(args.output_folder+'/'+args.job_name+'_concentration.txt', 'w')
-    csv_rv=open(args.output_folder+'/'+args.job_name+'_radius.txt', 'w')
+    csv_p=open(args.output_folder+'/'+args.job_name+'_pressure0.txt', 'w')
+    csv_u=open(args.output_folder+'/'+args.job_name+'_velocity0.txt', 'w')
+    csv_c=open(args.output_folder+'/'+args.job_name+'_concentration0.txt', 'w')
+    csv_rv=open(args.output_folder+'/'+args.job_name+'_radius0.txt', 'w')
 
-    csv_mass=open(args.output_folder+'/'+args.job_name+'_mass.txt', 'w')
+    csv_mass=open(args.output_folder+'/'+args.job_name+'_mass0.txt', 'w')
 
     #pvd files
     uf_out, pf_out= File(outputfolder+'fields'+'/uf.pvd'), File(outputfolder+'fields'+'/pf.pvd')
@@ -122,7 +122,7 @@ def PVS_simulation(args):
 
     # log to a file
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = os.path.join(outputfolder+'/', 'PVS_info.log')
+    filename = args.output_folder+'/'+args.job_name+'_PVSinfo.log'
     file_handler = logging.FileHandler(filename,mode='w')
     file_handler.setLevel(logging.INFO)
     #formatter = logging.Formatter("%(asctime)s %(filename)s, %(lineno)d, %(funcName)s: %(message)s")
