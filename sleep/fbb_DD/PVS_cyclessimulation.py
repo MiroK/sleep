@@ -917,8 +917,10 @@ def PVS_simulation(args):
                 #logging.info('Norm '+name+' : %.2e'%field.vector().norm('linf'))
                 row=[time]+list(values)
                 csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
+                csv_file.flush()
 
             csv_rv.write(('%e, %e\n')%(time,ymin))
+            csv_rv.flush()
 
             # volume of pvs
             volume = 2*np.pi*assemble(Constant(1.0)*r*dx(mesh_f))
