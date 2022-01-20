@@ -1065,7 +1065,7 @@ if __name__ == '__main__':
 
     my_parser.add_argument('-cycle',
                         type=str,
-                        default='REMsleep',
+                        default='',
                         help='cycle name, must be defined in the cycles.yml config file')
     
     my_parser.add_argument('-refineleft',
