@@ -68,6 +68,7 @@ statename='baseline'
 freqtable={'cardiac':1/data['periodcard'][statename],'resp':1/data['periodresp'][statename],'LF':1/data['periodLF'][statename],'VLF':1/data['periodVLF'][statename]}
 amptable={'cardiac':data['ampcard'][statename]/data['h0'][statename],'resp':data['ampresp'][statename]/data['h0'][statename],'LF':data['ampLF'][statename]/data['h0'][statename],'VLF':data['ampVLF'][statename]/data['h0'][statename]}
 #amptable['cardiac']=amptable['cardiac']/2 # I think it is overestimated
+amptable['cardiac']=0.03 # arbitrary 3 pc for now
 Awake=State(name='Awake',Rv=data['Rv'][statename]*1e-4,h0=data['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 
@@ -75,18 +76,21 @@ statename='stageNREM'
 freqtable={'cardiac':1/data['periodcard'][statename],'resp':1/data['periodresp'][statename],'LF':1/data['periodLF'][statename],'VLF':1/data['periodVLF'][statename]}
 amptable={'cardiac':data['ampcard'][statename]/data['h0'][statename],'resp':data['ampresp'][statename]/data['h0'][statename],'LF':data['ampLF'][statename]/data['h0'][statename],'VLF':data['ampVLF'][statename]/data['h0'][statename]}
 #amptable['cardiac']=amptable['cardiac']/2 # I think it is overestimated
+amptable['cardiac']=0.03 # arbitrary 3 pc for now
 NREM=State(name='NREM',Rv=data['Rv'][statename]*1e-4,h0=data['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 statename='stageIS'
 freqtable={'cardiac':1/data['periodcard'][statename],'resp':1/data['periodresp'][statename],'LF':1/data['periodLF'][statename],'VLF':1/data['periodVLF'][statename]}
 amptable={'cardiac':data['ampcard'][statename]/data['h0'][statename],'resp':data['ampresp'][statename]/data['h0'][statename],'LF':data['ampLF'][statename]/data['h0'][statename],'VLF':data['ampVLF'][statename]/data['h0'][statename]}
 #amptable['cardiac']=amptable['cardiac']/2 # I think it is overestimated
+amptable['cardiac']=0.03 # arbitrary 3 pc for now
 IS=State(name='IS',Rv=data['Rv'][statename]*1e-4,h0=data['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 statename='stageREM'
 freqtable={'cardiac':1/data['periodcard'][statename],'resp':1/data['periodresp'][statename],'LF':1/data['periodLF'][statename],'VLF':1/data['periodVLF'][statename]}
 amptable={'cardiac':data['ampcard'][statename]/data['h0'][statename],'resp':data['ampresp'][statename]/data['h0'][statename],'LF':data['ampLF'][statename]/data['h0'][statename],'VLF':data['ampVLF'][statename]/data['h0'][statename]}
 #amptable['cardiac']=amptable['cardiac']/2 # I think it is overestimated
+amptable['cardiac']=0.03 # arbitrary 3 pc for now
 REM=State(name='REM',Rv=data['Rv'][statename]*1e-4,h0=data['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 
@@ -123,6 +127,7 @@ statename='baseline'
 freqtable={'cardiac':1/data['periodcard'][statename],'resp':1/data['periodresp'][statename],'LF':1/data['periodLF'][statename],'VLF':1/data['periodVLF'][statename]}
 amptable={'cardiac':data['ampcard'][statename]/data['h0'][statename],'resp':data['ampresp'][statename]/data['h0'][statename],'LF':data['ampLF'][statename]/data['h0'][statename],'VLF':data['ampVLF'][statename]/data['h0'][statename]}
 #amptable['cardiac']=amptable['cardiac']/2 # I think it is overestimated
+amptable['cardiac']=0.03 # arbitrary 3 pc for now
 Quiet=State(name='Quiet',Rv=data['Rv'][statename]*1e-4,h0=data['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 
@@ -131,6 +136,7 @@ statename='stageLocomotion'
 freqtable={'cardiac':1/data['periodcard'][statename],'resp':1/data['periodresp'][statename],'LF':1/data['periodLF'][statename],'VLF':1/data['periodVLF'][statename]}
 amptable={'cardiac':data['ampcard'][statename]/data['h0'][statename],'resp':data['ampresp'][statename]/data['h0'][statename],'LF':data['ampLF'][statename]/data['h0'][statename],'VLF':data['ampVLF'][statename]/data['h0'][statename]}
 #amptable['cardiac']=amptable['cardiac']/2 # I think it is overestimated
+amptable['cardiac']=0.03 # arbitrary 3 pc for now
 Locomotion=State(name='Locomotion',Rv=data['Rv'][statename]*1e-4,h0=data['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 
@@ -139,6 +145,7 @@ statename='stageWhisking'
 freqtable={'cardiac':1/data['periodcard'][statename],'resp':1/data['periodresp'][statename],'LF':1/data['periodLF'][statename],'VLF':1/data['periodVLF'][statename]}
 amptable={'cardiac':data['ampcard'][statename]/data['h0'][statename],'resp':data['ampresp'][statename]/data['h0'][statename],'LF':data['ampLF'][statename]/data['h0'][statename],'VLF':data['ampVLF'][statename]/data['h0'][statename]}
 #amptable['cardiac']=amptable['cardiac']/2 # I think it is overestimated
+amptable['cardiac']=0.03 # arbitrary 3 pc for now
 Whisking=State(name='Whisking',Rv=data['Rv'][statename]*1e-4,h0=data['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 
