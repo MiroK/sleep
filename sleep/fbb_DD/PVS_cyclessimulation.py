@@ -809,6 +809,7 @@ def PVS_simulation(args):
         #  n is directed in the outward direction
 
         if FluidFlow>0 : 
+            # then the fluid is going out and we impose natural BC for concentration
 
             bcs_tracer = {'concentration': [],
                         'flux': [(facet_lookup['x_min'], Constant(0)),
@@ -816,6 +817,7 @@ def PVS_simulation(args):
                                 (facet_lookup['y_max'], Constant(0)),
                                 (facet_lookup['y_min'], Constant(0))]}
         else :
+            # then the fluid is going in and we impose the SAS concentration
             cmean=assemble(2*pi*r*c_n*ds(facet_lookup['x_min']))/assemble(2*pi*r*Constant(1)*ds(facet_lookup['x_min']))
             # we allow the possibility to use a relaxation here
             alpha=0. # 0 means no relaxation
@@ -841,7 +843,8 @@ def PVS_simulation(args):
             Qout = max((PCSF-Pss)/Rcsf,0) # valve
             # update CSF pressure
             PCSF += dt/Ccsf*(Qprod-Qout)+ np.pi*leq*(Rvfunction(time+dt)**2-Rvfunction(time)**2)/Ccsf
-                        
+
+            # link between leq and Nvessels ?            
 
 
         if sas_bc=='scenarioA' :
@@ -861,6 +864,10 @@ def PVS_simulation(args):
 
             mout+=Qout*cSAS*dt
 
+        # update the volume of CSF
+        VCSF+=dt*Nvessels*FluidFlow
+        # should correspond to the volume change due to vessel dilation
+        #VCSF+=np.pi*leq*(Rvfunction(time+dt)**2-Rvfunction(time)**2)
 
         # update tracer concentration in SAS
         cSAS=m/VCSF
