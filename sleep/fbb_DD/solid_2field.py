@@ -1,9 +1,17 @@
+import petsc4py, sys
+petsc4py.init(sys.argv)
+from petsc4py import PETSc
+
 from dolfin import *
-from functools import reduce
+from sleep.utils import preduce, KSP_CVRG_REASONS
 import itertools
 import operator
 import sympy as sp
+import numpy as np
 import ulfy  # https://github.com/MiroK/ulfy
+from collections import Counter
+
+print = PETSc.Sys.Print
 
 # We solve Biot in (0, T) x Omega
 # 
@@ -25,15 +33,16 @@ import ulfy  # https://github.com/MiroK/ulfy
 #
 
 def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
-    '''Return displacement, percolation velocity, pressure and final time'''
-    info('Solving Biot for %d unknowns' % W.dim())
+    '''Return displacement, pressure and final time'''
+    print('Solving Biot for %d unknowns' % W.dim())
     # NOTE: this is time dependent problem which we solve with 
     # parameters['dt'] for parameters['nsteps'] time steps and to 
     # update time in f1, f2 or the expressions bcs the physical time is
     # set as parameters['T0'] + dt*(k-th step)
     mesh = W.mesh()
+    comm = mesh.mpi_comm()
 
-    needed = set(bdries.array()) - set((0, ))    
+    needed = preduce(comm, operator.or_, (set(bdries.array()), )) - set((0, ))    
     # Validate elasticity bcs
     bcs_E = bcs['elasticity']
     assert all(k in ('displacement', 'traction') for k in bcs_E)
@@ -48,7 +57,7 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
     for this, that in itertools.combinations(tags, 2):
         if this and that: assert not this & that
 
-    assert needed == reduce(operator.or_, tags)
+    assert needed == preduce(comm, operator.or_, tags), (needed, preduce(comm, operator.or_, tags))
 
     # Validate Darcy bcs
     bcs_D = bcs['darcy']
@@ -64,7 +73,7 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
     for this, that in itertools.combinations(tags, 2):
         if this and that: assert not this & that
 
-    assert needed == reduce(operator.or_, tags), (needed, reduce(operator.or_, tags))
+    assert needed == preduce(comm, operator.or_, tags), (needed, preduce(comm, operator.or_, tags))
 
     # Collect bc values for possible temporal update in the integration
     bdry_expressions = sum(([item[1] for item in bc]
@@ -72,9 +81,9 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
                            [])
 
     # FEM ---
-    eta, u, p = TrialFunctions(W)
-    phi, v, q = TestFunctions(W)
-    assert len(eta.ufl_shape) == 1 and len(u.ufl_shape) == 1 and len(p.ufl_shape) == 0
+    eta, p = TrialFunctions(W)
+    phi, q = TestFunctions(W)
+    assert len(eta.ufl_shape) == 1 and len(p.ufl_shape) == 0
 
     # Material parameters
     kappa, mu, lmbda, alpha, s0 = (parameters[k] for k in ('kappa', 'mu', 'lmbda', 'alpha', 's0'))
@@ -84,8 +93,8 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
     # Previous solutions
     wh_0 = Function(W)
     assign(wh_0.sub(0), interpolate(eta_0, W.sub(0).collapse()))    
-    assign(wh_0.sub(2), interpolate(p_0, W.sub(2).collapse()))
-    eta_0, u_0, p_0 = split(wh_0)
+    assign(wh_0.sub(1), interpolate(p_0, W.sub(1).collapse()))
+    eta_0, p_0 = split(wh_0)
 
     # Elasticity
     a = (2*mu*inner(sym(grad(eta)), sym(grad(phi)))*dx +
@@ -95,11 +104,9 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
     L = inner(f1, phi)*dx
               
     # Darcy
-    a += (1/kappa)*inner(u, v)*dx - inner(p, div(v))*dx
-         
-    # Mass conservation with backward Euler
-    a += inner(s0*p, q)*dx + inner(alpha*div(eta), q)*dx + dt*inner(div(u), q)*dx
-    L += dt*inner(f2, q)*dx + inner(s0*p_0, q)*dx + inner(alpha*div(eta_0), q)*dx         
+    a += (-alpha*inner(q, div(eta))*dx - inner(s0*p, q)*dx - inner(kappa*dt*grad(p), grad(q))*dx)
+
+    L += -dt*inner(f2, q)*dx - inner(s0*p_0, q)*dx - inner(alpha*div(eta_0), q)*dx         
 
     # Handle natural bcs
     n = FacetNormal(mesh)
@@ -108,12 +115,16 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
     for tag, value in traction_bcs:
         L += inner(value, phi)*ds(tag)
     # For Darcy
-    for tag, value in pressure_bcs:
-        L += -inner(value, dot(v, n))*ds(tag)
-        
-    # Displacement bcs and flux bcs go on the system
+    for tag, value in flux_bcs:
+        if value.ufl_shape == ():
+            L += dt*inner(value, q)*ds(tag)  # Scalar that is -kappa*grad(p).n
+        else:
+            assert len(value.ufl_shape) == 1 # A vector that is -kappa*grad(p)
+            L += dt*inner(dot(value, n), q)*ds(tag)
+          
+    # Displacement bcs and pressure bcs go on the system
     bcs_strong = [DirichletBC(W.sub(0), value, bdries, tag) for tag, value in displacement_bcs]
-    bcs_strong.extend([DirichletBC(W.sub(1), value, bdries, tag) for tag, value in flux_bcs])
+    bcs_strong.extend([DirichletBC(W.sub(1), value, bdries, tag) for tag, value in pressure_bcs])
 
     # Discrete problem
     assembler = SystemAssembler(a, L, bcs_strong)
@@ -121,10 +132,59 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
     A, b = PETScMatrix(), PETScVector()
     # Assemble once and setup solver for it
     assembler.assemble(A)
-    solver = LUSolver(A, 'mumps')
 
+    if parameters.get('solver', 'direct') == 'direct':
+        solver = PETScLUSolver(A, 'mumps')
+        ksp = solver.ksp()
+    else:        
+        schur_bit = sqrt(lmbda + 2*mu/len(eta))
+        # Preconditioner operator following https://arxiv.org/abs/1705.08842
+        a_prec = (2*mu*inner(sym(grad(eta)), sym(grad(phi)))*dx
+                  + inner(lmbda*div(eta), div(phi))*dx
+                  + inner(s0*p, q)*dx + inner(kappa*dt*grad(p), grad(q))*dx
+                  + (alpha**2/schur_bit**2)*inner(p, q)*dx)
+
+        B, b_dummy = PETScMatrix(), PETScVector()
+        assemble_system(a_prec, L, bcs_strong, A_tensor=B, b_tensor=b_dummy)
+
+        solver = PETScKrylovSolver()
+        ksp = solver.ksp()
+            
+        ksp.setType(PETSc.KSP.Type.MINRES)
+        ksp.setOperators(A.mat(), B.mat())
+        ksp.setInitialGuessNonzero(True)  # For time dep problem
+
+        V_dofs, Q_dofs = (W.sub(i).dofmap().dofs() for i in range(2))
+
+        pc = ksp.getPC()
+        pc.setType(PETSc.PC.Type.FIELDSPLIT)
+        is_V = PETSc.IS().createGeneral(V_dofs)
+        is_Q = PETSc.IS().createGeneral(Q_dofs)
+        pc.setFieldSplitIS(('0', is_V), ('1', is_Q))
+        pc.setFieldSplitType(PETSc.PC.CompositeType.ADDITIVE) 
+
+        ksp.setUp()
+        # ... all blocks inverted AMG sweeps
+        subksps = pc.getFieldSplitSubKSP()
+        subksps[0].setType('preonly')
+        # NOTE: ideally this would be done with multigrid but let's see
+        # how far LU will take us. For amg also consider grad-grad to help
+        # it
+        subksps[0].getPC().setType('lu')  
+        subksps[1].setType('preonly')
+        subksps[1].getPC().setType('hypre')
+
+        opts = PETSc.Options()
+        # opts.setValue('ksp_monitor_true_residual', None)
+        opts.setValue('ksp_rtol', 1E-14)
+        opts.setValue('ksp_atol', 1E-8)
+        
+        pc.setFromOptions()
+        ksp.setFromOptions()
+    
     # Temporal integration loop
     T0 = parameters['T0']
+    niters, reasons = [], []
     for k in range(parameters['nsteps']):
         # Update source if possible
         for foo in bdry_expressions + [f1, f2]:
@@ -132,19 +192,29 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters):
             hasattr(foo, 'time') and setattr(foo, 'time', T0)
 
         assembler.assemble(b)
-        solver.solve(wh_0.vector(), b)
+        
+        niters.append(solver.solve(wh_0.vector(), b))
+        reasons.append(ksp.getConvergedReason())
         T0 += dt(0)
-        
-        k % 10 == 0 and info('  Biot at step (%d, %g) |uh|=%g' % (k, T0, wh_0.vector().norm('l2')))    
 
-    eta_h, u_h, p_h = wh_0.split(deepcopy=True)
+        if k % 10 == 0:
+            print('  Biot at step (%d, %g) |uh|=%g' % (k, T0, wh_0.vector().norm('l2')))
+            print('  KSP stats MIN/MEAN/MAX (%d|%g|%d) %d' % (
+                np.min(niters), np.mean(niters), np.max(niters), len(niters)
+            ))
+            for reason, count in Counter(reasons).items():
+                print('      KSP cvrg reason %s -> %d' % (KSP_CVRG_REASONS[reason], count))
+            niters.clear()
+            reasons.clear()
+
+    eta_h, p_h = wh_0.split(deepcopy=True)
         
-    return eta_h, u_h, p_h, T0
+    return eta_h, p_h, T0
 
 
 def mms_solid(parameters):
     '''Method of manufactured solutions on [0, 1]^2'''
-    mesh = UnitSquareMesh(2, 2)  
+    mesh = UnitSquareMesh(MPI.comm_self, 2, 2)  
     V = VectorFunctionSpace(mesh, 'CG', 2)  # Displacement, Flux
     Q = FunctionSpace(mesh, 'CG', 2)  # Pressure
     # Coefficient space
@@ -204,11 +274,15 @@ def mms_solid(parameters):
 
 if __name__ == '__main__':
 
-    parameters = {'kappa': Constant(1),
-                  'mu': Constant(1),
-                  'lmbda': Constant(1),
-                  'alpha': Constant(1),
-                  's0': Constant(1)}
+    parameters = {'kappa': Constant(2),
+                  'mu': Constant(3),
+                  'lmbda': Constant(4),
+                  'alpha': Constant(5),
+                  's0': Constant(0.2)}
+    # Decide solver
+    parameters['solver'] = 'iterative'
+
+    #
     data = mms_solid(parameters)
     
     eta_exact, u_exact, p_exact  = data['solution']
@@ -216,10 +290,9 @@ if __name__ == '__main__':
     tractions = dict(enumerate(data['tractions'], 1))
 
     Eelm = VectorElement('Lagrange', triangle, 2)
-    Velm = FiniteElement('Raviart-Thomas', triangle, 1)
-    Qelm = FiniteElement('Discontinuous Lagrange', triangle, 0)
+    Qelm = FiniteElement('Lagrange', triangle, 1)
 
-    Welm = MixedElement([Eelm, Velm, Qelm])
+    Welm = MixedElement([Eelm, Qelm])
 
     parameters['dt'] = 1E-6
     parameters['nsteps'] = int(1E-4/parameters['dt'])
@@ -256,13 +329,12 @@ if __name__ == '__main__':
         ans = solve_solid(W, f1, f2, eta_0, p_0, bdries=bdries, bcs=bcs,
                           parameters=parameters)
 
-        eta_h, u_h, p_h, time = ans
-        eta_exact.time, u_exact.time, p_exact.time = (time, )*3
+        eta_h, p_h, time = ans
+        eta_exact.time, p_exact.time = (time, )*2
         # Errors
         e_eta = errornorm(eta_exact, eta_h, 'H1', degree_rise=2)        
-        e_u = errornorm(u_exact, u_h, 'Hdiv', degree_rise=2)
-        e_p = errornorm(p_exact, p_h, 'L2', degree_rise=2)        
-        print('|eta-eta_h|_1', e_eta, '|u-uh|_div', e_u, '|p-ph|_0', e_p, '#dofs', W.dim())
+        e_p = errornorm(p_exact, p_h, 'H1', degree_rise=2)        
+        print('|eta-eta_h|_1', e_eta, '|p-ph|_1', e_p, '#dofs', W.dim())
 
 
     # ----
@@ -305,17 +377,12 @@ if __name__ == '__main__':
         ans = solve_solid(W, f1, f2, eta_0, p_0, bdries=bdries, bcs=bcs,
                           parameters=parameters)
 
-        eta_h, u_h, p_h, time = ans
-        eta_exact.time, u_exact.time, p_exact.time = (time, )*3
+        eta_h, p_h, time = ans
+        eta_exact.time, p_exact.time = (time, )*2
         # Errors
         e_eta = errornorm(eta_exact, eta_h, 'H1', degree_rise=2)        
-        e_u = errornorm(u_exact, u_h, 'Hdiv', degree_rise=2)
-        e_p = errornorm(p_exact, p_h, 'L2', degree_rise=2)
+        e_p = errornorm(p_exact, p_h, 'H1', degree_rise=2)
         print('\tdt=%.2E T=%.2f nsteps=%d' %  (dt, p_exact.time, parameters['nsteps']))
-        print('|eta-eta_h|_1', e_eta, '|u-uh|_div', e_u, '|p-ph|_0', e_p, '#dofs', W.dim())
+        print('|eta-eta_h|_1', e_eta, '|p-ph|_1', e_p, '#dofs', W.dim())
         
         dt = dt/2
-
-    # for i, (num, true) in enumerate(zip((eta_h, u_h, p_h), (eta_exact, u_exact, p_exact))):
-    #     File('x%d_num.pvd' % i) << num
-    #     File('x%d_true.pvd' % i) << interpolate(true, num.function_space())

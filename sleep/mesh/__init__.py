@@ -39,7 +39,7 @@ def load_mesh2d(h5_file, json_file=None):
     
     if json_file is None:
         json_file = '.'.join([base, 'json'])
-    assert os.path.exists(json_file)
+    assert os.path.exists(json_file), json_file
 
     mesh = df.Mesh()
     h5 = df.HDF5File(mesh.mpi_comm(), h5_file, 'r')
