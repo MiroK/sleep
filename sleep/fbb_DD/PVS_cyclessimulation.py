@@ -477,9 +477,9 @@ def PVS_simulation(args):
     if lateral_bc=='free' :
         logging.info('Right : zero concentration')
     else :
-        internalproduction=args.internalprod
-        if internalproduction:     
-            logging.info('Right : imposed solute production rate : %e ([c]/s)'%args.internalproduction)
+        productionrate=args.productionrate
+        if productionrate:     
+            logging.info('Right : imposed solute production rate : %e ([c]/s)'%args.productionrate)
         else :
             logging.info('Right : no flux')
 
@@ -576,7 +576,7 @@ def PVS_simulation(args):
 
     # Now we wire up
 
-    rate_prod=Expression('rate/surface',rate=internalproduction, surface=1, degree=1)
+    rate_prod=Expression('rate/surface',rate=productionrate, surface=1, degree=1)
 
 
     if lateral_bc=='free' :
@@ -1096,7 +1096,7 @@ if __name__ == '__main__':
                         default=False,
                         help='Refine the mesh on the left side')
 
-    my_parser.add_argument('-internalprod',
+    my_parser.add_argument('-productionrate',
                         type=float,
                         default=0,
                         help='Rate of the internal production of solute')
