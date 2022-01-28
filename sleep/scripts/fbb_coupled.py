@@ -163,6 +163,10 @@ tractions_iface = Function(VectorFunctionSpace(mesh_s, 'DG', 1))  # FIXME: DG0? 
 etaf_iface = Function(VectorFunctionSpace(mesh_f, 'CG', 2))
 
 
+
+# Porosity variable 
+porosity =FunctionSpace(mesh_s, 'CG', 1)
+
 ######
 
 
@@ -282,6 +286,7 @@ while time < tfinal:
                                             bdries=solid_bdries, bcs=bcs_solid, parameters=solid_parameters)
 
     # Compute the porosity in the Biot domain
+    import sleep.fbb_DD.cylindrical as cyl
 
     # Extend solid deformation to 3D
     deformation = as_vector((eta_s[0],
@@ -289,7 +294,7 @@ while time < tfinal:
                              Constant(0)))
 
     porosity_n=project(porosity_n+solid_parameters['alpha']*cyl.DivAxisym(deformation)+solid_parameters['s0']*(p_s-p_s0),porosity)
-
+    #phi=project(cyl.DivAxisym(deformation),porosity)
 
 
     # Impose the velocity in the fluid, given dU/dt of the interface and the percolation velocity at last time steps  
@@ -307,6 +312,9 @@ while time < tfinal:
     if True:
         ALE.move(mesh_s, interpolate(eta_s, Va_s))
         ALE.move(mesh_f, eta_f)
+
+    
+
 
 
 

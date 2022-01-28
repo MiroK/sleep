@@ -5,6 +5,7 @@ from datetime import datetime
 import os
 
 import numpy as np
+from math import pi
 
 from sleep.fbb_DD.advection import solve_adv_diff_cyl as solve_adv_diff
 from sleep.fbb_DD.fluid import solve_fluid_cyl as solve_fluid
@@ -14,18 +15,14 @@ from sleep.mesh import load_mesh2d
 from dolfin import *
 
 
-#logging.debug
-#logging.info
-#logging.warning
-#logging.error
-#logging.critical
-
-#todo : debug the slice extraction, seems to be out of domain after deformation
+# What are the conditions for time step ?
+# All implicit so the only worry is numerical diffusion.
 #todo : add dt and n steps management
-#todo : check the BC resistance ---> FFC compile again during the run. Is it normal? How to remove the info from the log ?
-#todo : change location of umax for cylindrical
 
-#todo : external script to postprocess u p c profiles : figure , compute coef dispertion
+
+# for the resistance BC : It does not work fo high resistance (ex R=1e11), we cannot tend to zero flow case. 
+# Should we iterate ? 
+# Need to analyse for time step convergence. 
 
 
 # Define line function for 1D slice evaluation
@@ -38,6 +35,29 @@ def line_sample(line, f, fill=np.nan):
             continue
     return values
 
+def slice_integrate_cyl(x,f,ymin,ymax,N=10) :
+    vertical_line=line([x,ymin],[x,ymax], N)
+    values=line_sample(vertical_line, f)
+    r=np.linspace(ymin,ymax,N)
+    integral=2*np.trapz(values*r,r)/(ymax**2-ymin**2) #cylindrical coordinate
+    return integral
+
+def profile_cyl(f,xmin,xmax,ymin,ymax,Nx=100,Ny=10):
+    spanx=np.linspace(xmin,xmax,Nx)
+    values=[slice_integrate_cyl(x,f,ymin,ymax,N=Ny) for x in spanx]
+    return np.array(values)
+
+def slice_integrate(x,f,ymin,ymax,N=10) :
+    vertical_line=line([x,ymin],[x,ymax], N)
+    values=line_sample(vertical_line, f)
+    r=np.linspace(ymin,ymax,N)
+    integral=2*np.trapz(values,r)/(ymax-ymin) #cylindrical coordinate
+    return integral
+
+def profile(f,xmin,xmax,ymin,ymax,Nx=100,Ny=10):
+    spanx=np.linspace(xmin,xmax,Nx)
+    values=[slice_integrate_cyl(x,f,ymin,ymax,N=Ny) for x in spanx]
+    return np.array(values)
 
 def line(A, B, nsteps):
     A=np.array(A)
@@ -69,8 +89,6 @@ def PVS_simulation(args):
     if not os.path.exists(outputfolder):
         os.makedirs(outputfolder)
 
-    if not os.path.exists(outputfolder+'/log'):
-        os.makedirs(outputfolder+'/log')
 
     if not os.path.exists(outputfolder+'/profiles'):
         os.makedirs(outputfolder+'/profiles')
@@ -84,6 +102,7 @@ def PVS_simulation(args):
     csv_p=open(outputfolder+'profiles'+'/pressure.txt', 'w')
     csv_u=open(outputfolder+'profiles'+'/velocity.txt', 'w')
     csv_c=open(outputfolder+'profiles'+'/concentration.txt', 'w')
+    csv_rv=open(outputfolder+'profiles'+'/radius.txt', 'w')
 
     #pvd files
     uf_out, pf_out= File(outputfolder+'fields'+'/uf.pvd'), File(outputfolder+'fields'+'/pf.pvd')
@@ -96,8 +115,8 @@ def PVS_simulation(args):
 
     # log to a file
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = os.path.join(outputfolder+'/log/', 'PVS_%s.log' % now)
-    file_handler = logging.FileHandler(filename)
+    filename = os.path.join(outputfolder+'/', 'PVS_info.log')
+    file_handler = logging.FileHandler(filename,mode='w')
     file_handler.setLevel(logging.INFO)
     #formatter = logging.Formatter("%(asctime)s %(filename)s, %(lineno)d, %(funcName)s: %(message)s")
     #file_handler.setFormatter(formatter)
@@ -190,6 +209,10 @@ def PVS_simulation(args):
     sigma_gauss=args.sigma
     logging.info('Free diffusion coef: %e cm2/s'%D)
     logging.info('STD of initial gaussian profile: %e '%sigma_gauss)
+    xi_gauss=args.initial_pos
+    logging.info('Initial position: %e cm2'%xi_gauss)
+
+
 
     logging.info('\n * ALE')
     kappa=args.ale_parameter
@@ -305,8 +328,9 @@ def PVS_simulation(args):
     tn = sympy.symbols("tn")
     tnp1 = sympy.symbols("tnp1")
     sin = sympy.sin
+    sqrt = sympy.sqrt
 
-    logging.info('\n * wall motion parameters')
+    logging.info('\n * Cross section area parameters')
     ai=args.ai
     fi=args.fi
     phii=args.phii
@@ -314,14 +338,16 @@ def PVS_simulation(args):
     logging.info('fi (Hz) : '+'%e '*len(fi)%tuple(fi))
     logging.info('phii (rad) : '+'%e '*len(phii)%tuple(phii))
 
-    functionU = Rv*sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]) # displacement
-    U_vessel = sympy.printing.ccode(functionU)
 
-    functionV = sympy.diff(functionU,tn) # velocity
+
+    functionR = sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))) # displacement
+    R_vessel = sympy.printing.ccode(functionR)
+
+    functionV = sympy.diff(functionR,tn) # velocity
     V_vessel = sympy.printing.ccode(functionV)
 
     #Delta U for ALE. I dont really like this
-    functionUALE=Rv*sum([a*sin(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)])-Rv*sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)])
+    functionUALE=sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*sin(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)])))- sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))) 
     UALE_vessel = sympy.printing.ccode(functionUALE)   
 
     vf_bottom = Expression(('0',V_vessel ), tn = 0, degree=2)   # no slip no gap condition at vessel wall 
@@ -372,7 +398,7 @@ def PVS_simulation(args):
 
     elif lateral_bc=='resistance' :
 
-        Rpressure=Expression('R*Q+p0', R = resistance, Q=0, p0=0) #
+        Rpressure=Expression('R*Q+p0', R = resistance, Q=0, p0=0, degree=1) #
   
         # Compute pressure to impose according to the flow at previous time step and resistance.
 
@@ -426,7 +452,7 @@ def PVS_simulation(args):
     logging.info("                STD parameter = %e"%sigma_gauss)
 
 
-    c_0 = Expression('exp(-a*pow(x[0]-b, 2)) ', degree=1, a=1/2/sigma_gauss**2, b=L/2)
+    c_0 = Expression('exp(-a*pow(x[0]-b, 2)) ', degree=1, a=1/2/sigma_gauss**2, b=xi_gauss)
     c_n =  project(c_0,Ct)
 
     # Save initial state
@@ -462,6 +488,9 @@ def PVS_simulation(args):
     time = 0.
     timestep=0
 
+    
+
+
     # Here I dont know if there will be several dt for advdiff and fluid solver
     while time < tfinal:
 
@@ -471,14 +500,21 @@ def PVS_simulation(args):
             hasattr(expr, 'tnp1') and setattr(expr, 'tnp1', time+dt)
 
         if lateral_bc=='resistance' :
-            Q=assemble(dot(u_n, n)*ds(facet_lookup['x_max']))
-            setattr(Rpressure, 'Q', Q)
+            z, r = SpatialCoordinate(mesh_f)
+            ds = Measure('ds', domain=mesh_f, subdomain_data=fluid_bdries)
+            n = FacetNormal(mesh_f)
+            Flow=assemble(2*pi*r*dot(uf_n, n)*ds(facet_lookup['x_max']))
 
+            print('Right outflow : %e \n'%Flow)
+            setattr(Rpressure, 'Q', Flow)
 
-        # Solve ALE and move mesh 
+        #Solve ALE and move mesh 
         eta_f = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale,
                       parameters=ale_parameters)
         ALE.move(mesh_f, eta_f)
+        mesh_f.bounding_box_tree().build(mesh_f)
+
+
 
         # Solve fluid problem
         uf_, pf_ = solve_fluid(Wf, u_0=uf_n,  f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_fluid,
@@ -490,7 +526,7 @@ def PVS_simulation(args):
         tracer_parameters["dt"]=dt
 
         # Solve tracer problem
-        c_, T0= solve_adv_diff(Ct, velocity=uf_, f=Constant(0), phi_0=c_n,
+        c_, T0= solve_adv_diff(Ct, velocity=uf_-eta_f/Constant(dt), phi=Constant(1), f=Constant(0), c_0=c_n, phi_0=Constant(1),
                                   bdries=fluid_bdries, bcs=bcs_tracer, parameters=tracer_parameters)
 
 
@@ -506,7 +542,9 @@ def PVS_simulation(args):
         # Save output
         if(timestep % int(toutput/dt) == 0):
 
-            logging.info("save output time %e s"%time)
+            
+
+            logging.info("\n*** save output time %e s"%time)
             logging.info("number of time steps %i"%timestep)
 
             # may report Courant number or other important values that indicate how is doing the run
@@ -520,16 +558,32 @@ def PVS_simulation(args):
 
 
             # Get the 1 D profiles at umax (to be changed in cyl coordinate)
-            Rvn=Rv+functionU.subs(tn, time)
-            slice_line = line([0,(Rpvs+Rvn)/2],[L,(Rpvs+Rvn)/2], 100)
+            mesh_points=mesh_f.coordinates()                                                      
+            x=mesh_points[:,0]
+            y=mesh_points[:,1]
+            xmin=min(x)
+            xmax=max(x)
+            ymin=min(y)
+            ymax=max(y)
+                        
+            #slice_line = line([xmin,(ymin+ymax)/2],[xmax,(ymin+ymax)/2], 100)
+
+            logging.info('Rpvs : %e'%ymax)
+            logging.info('Rvn : %e'%ymin)
 
             files=[csv_p,csv_u,csv_c]
             fields=[pf_n,uf_n.sub(0),c_n]
+            field_names=['pressure (dyn/cm2)','axial velocity (cm/s)','concentration']
 
-            for csv_file,field in zip(files,fields) :
-                values = line_sample(slice_line, field) 
+            for csv_file,field,name in zip(files,fields,field_names) :
+                #values = line_sample(slice_line, field)
+                values =profile(field,xmin,xmax,ymin,ymax)
+                logging.info('Max '+name+' : %.2e'%max(abs(values)))
+                #logging.info('Norm '+name+' : %.2e'%field.vector().norm('linf'))
                 row=[time]+list(values)
                 csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
+
+            csv_rv.write('%e, %e\n'%(time,ymin))
 
 
 
@@ -547,7 +601,7 @@ if __name__ == '__main__':
 
     my_parser.add_argument('-o','--output_folder',
                             type=str,
-                            default="./output",
+                            default="../output/",
                             help='Folder where the results are stored')
 
     my_parser.add_argument('-rv','--radius_vessel',
@@ -561,7 +615,7 @@ if __name__ == '__main__':
                         default=10e-4,
                         help='PVS outer radius as rest')
 
-    my_parser.add_argument('-l','--length',
+    my_parser.add_argument('-lpvs','--length',
                         type=float,
                         default=100e-4,
                         help='Length of the vessel')
@@ -640,7 +694,10 @@ if __name__ == '__main__':
                         default=1e-4,
                         help='STD gaussian init for concentration')
 
-
+    my_parser.add_argument('-xi','--initial_pos',
+                        type=float,
+                        default=0,
+                        help='Initial center of the gaussian for concentration')
 
     args = my_parser.parse_args()
 

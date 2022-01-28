@@ -5,6 +5,20 @@
 
 *.pvd
 *.vtu
+*.txt
+*.log
+
+*.png
+*.json
+
+*.msh
+*.h5
+
+*.ipynb
+*.csv
+
+*.cpp
+*.sh
 
 *.txt
 *.png
