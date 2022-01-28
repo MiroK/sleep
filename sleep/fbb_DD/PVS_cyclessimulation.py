@@ -1,5 +1,6 @@
 #! /usr/bin/env python3
 import argparse
+#from asyncio.sslproto import constants
 import logging
 from datetime import datetime
 import os
@@ -414,6 +415,8 @@ def PVS_simulation(args):
 
     c_SAS= Expression('m/VCSF', m=0, VCSF=40e-3, degree=2)
 
+    
+
 
 
     #initial concentration in SAS
@@ -428,7 +431,7 @@ def PVS_simulation(args):
     VPVS=((np.pi*Rpvsfunction(0)**2)-(np.pi*Rvfunction(0)**2))*L*Nvessels
 
     # initial volume of CSF in SAS : assumed to be 10 times larger than volume in PVS
-    VCSF=VPVS*10 #40e-3 
+    VCSF=10*VPVS #40e-3 
 
     # initial pressure of the CSF
     PCSF=4 # mmHg
@@ -474,7 +477,11 @@ def PVS_simulation(args):
     if lateral_bc=='free' :
         logging.info('Right : zero concentration')
     else :
-        logging.info('Right : no flux')
+        internalproduction=args.internalprod
+        if internalproduction:     
+            logging.info('Right : imposed solute production rate : %e ([c]/s)'%args.internalproduction)
+        else :
+            logging.info('Right : no flux')
 
 
     logging.info('Top : no flux')
@@ -569,6 +576,9 @@ def PVS_simulation(args):
 
     # Now we wire up
 
+    rate_prod=Expression('rate/surface',rate=internalproduction, surface=1, degree=1)
+
+
     if lateral_bc=='free' :
         bcs_fluid = {'velocity': [(facet_lookup['y_min'],vf_bottom),
                                 (facet_lookup['y_max'], vf_top)],
@@ -594,9 +604,10 @@ def PVS_simulation(args):
                     'traction': [],  
                     'pressure': [(facet_lookup['x_min'], Constant(0))]}     
 
+    #### This is overwritten later depending on the scenario 
 
     bcs_tracer = {'concentration': [(facet_lookup['x_min'], c_SAS)],
-                    'flux': [(facet_lookup['x_max'], Constant(0)),
+                    'flux': [(facet_lookup['x_max'], rate_prod),
                             (facet_lookup['y_max'], Constant(0)),
                             (facet_lookup['y_min'], Constant(0))]}
 
@@ -813,7 +824,7 @@ def PVS_simulation(args):
 
             bcs_tracer = {'concentration': [],
                         'flux': [(facet_lookup['x_min'], Constant(0)),
-                                (facet_lookup['x_max'], Constant(0)),
+                                (facet_lookup['x_max'], rate_prod),
                                 (facet_lookup['y_max'], Constant(0)),
                                 (facet_lookup['y_min'], Constant(0))]}
         else :
@@ -824,7 +835,7 @@ def PVS_simulation(args):
             c_imposed=(1-alpha)*cSAS+alpha*cmean
 
             bcs_tracer = {'concentration': [(facet_lookup['x_min'], Constant(c_imposed))],
-                        'flux': [(facet_lookup['x_max'], Constant(0)),
+                        'flux': [(facet_lookup['x_max'], rate_prod),
                                 (facet_lookup['y_max'], Constant(0)),
                                 (facet_lookup['y_min'], Constant(0))]}
 
@@ -871,6 +882,9 @@ def PVS_simulation(args):
 
         # update tracer concentration in SAS
         cSAS=m/VCSF
+
+
+        rate_prod.surface=assemble(2*pi*r*ds(facet_lookup['x_max']))
 
 
 
@@ -1082,6 +1096,10 @@ if __name__ == '__main__':
                         default=False,
                         help='Refine the mesh on the left side')
 
+    my_parser.add_argument('-internalprod',
+                        type=float,
+                        default=0,
+                        help='Rate of the internal production of solute')
     args = my_parser.parse_args()
 
 
