@@ -1109,6 +1109,5 @@ if __name__ == '__main__':
 
 
 # python3 PVS_cyclessimulation.py -j REMsleepnew -lpvs 200e-4 -c0init constant -c0value 50 -sasbc scenarioA -cycle REMsleep -tend 420 -toutput 1 -dt 2e-2 -r -1 -nr 4 -nl 50 -d 2e-7
-# python3 PVS_cyclessimulation.py -j REMsleepin -lpvs 200e-4 -c0init null -c0value 50 -sasbc scenarioB -cycle REMsleep -tend 420 -toutput 1 -dt 2e-2 -r -1 -nr 4 -nl 50 -d 2e-7 -refineleft True
 
-#python3 PVS_cyclessimulation.py -j testSAS -lpvs 200e-4 -c0init constant -c0value 50 -sasbc scenarioD -fi 10 -ai 0.01 -tend 1 -toutput 1e-2 -dt 1e-2 -r -1 -nr 6 -nl 100 -d 2e-7 
+#python3 PVS_cyclessimulation.py -lpvs 0.02 -c0init constant -c0valueSAS 0 -c0valuePVS 0 -sasbc scenarioA -tend 400 -toutput 1 -dt 0.005 -r -1 -nr 8 -nl 100 -d 5.617252598067515e-07 -refineleft True  -j quiet-prod-scenarioA -cycle quietwake -productionrate 1e-9
