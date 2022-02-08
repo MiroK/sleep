@@ -18,7 +18,7 @@ import ulfy  # https://github.com/MiroK/ulfy
 #
 # is solved on FE space W
 
-def solve_fluid(W, u_n,p_n, f,  bdries, bcs, parameters):
+def solve_fluid(W, u_0, f,  bdries, bcs, parameters):
     '''Return velocity and pressure'''
     info('Solving Stokes for %d unknowns' % W.dim())
     mesh = W.mesh()
@@ -146,7 +146,7 @@ def mms_stokes(mu_value):
             'stress_components': stress_components}
 
 
-def solve_fluid_cyl(W,u_n,p_n, f,  bdries, bcs, parameters):
+def solve_fluid_cyl(W,u_0, f,  bdries, bcs, parameters):
     '''Return velocity and pressure'''
     info('Solving Stokes for %d unknowns' % W.dim())
     mesh = W.mesh()
