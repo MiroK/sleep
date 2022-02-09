@@ -140,7 +140,15 @@ def PVS_simulation(args):
 
     # initialise logging
 
-    logging.info(title1("Simulation of the PVS flow and tracer transport using non steady solver and diffusion-advection solvers"))
+    # initialise logging
+
+    logging.info(' ______     ______        _                 _       _   _             \n')
+    logging.info('|  _ \ \   / / ___|   ___(_)_ __ ___  _   _| | __ _| |_(_) ___  _ __  \n')
+    logging.info("| |_) \ \ / /\___ \  / __| | '_ ` _ \| | | | |/ _` | __| |/ _ \| '_ \ \n")
+    logging.info('|  __/ \ V /  ___) | \__ \ | | | | | | |_| | | (_| | |_| | (_) | | | |\n')
+    logging.info('|_|     \_/  |____/  |___/_|_| |_| |_|\__,_|_|\__,_|\__|_|\___/|_| |_|\n\n')
+
+    logging.info(title1("Simulation of the PVS flow and tracer transport using stoke solver and diffusion-advection solver"))
 
     logging.info("Date and time:"+datetime.now().strftime("%m/%d/%Y, %H:%M:%S"))
 
@@ -162,6 +170,17 @@ def PVS_simulation(args):
     logging.info('Vessel radius : %e cm'%Rv)
     logging.info('PVS radius : %e cm'%Rpvs)
     logging.info('PVS length : %e cm'%L)
+
+    # test presence of the SAS compartment on the mesh
+    isSAS=args.SAS
+
+    if isSAS :
+        logging.info('Add a SAS compartment on the left')
+        Rsas=args.radius_sas+Rv
+        Lsas=args.length_sas
+        logging.info('SAS length : %e cm'%Lsas)
+        logging.info('SAS radius : %e cm'%Rsas)
+
 
     #Mesh
     logging.info('\n * Mesh')
@@ -499,26 +518,101 @@ def PVS_simulation(args):
     # Mesh
     logging.info(title1('Meshing'))
 
-    logging.info('cell size : %e cm'%(np.sqrt(DR**2+DY**2)))
-    logging.info('nb cells: %i'%(Nl*Nr*2))
 
-    mesh_f= RectangleMesh(Point(0, Rvfunction(0)), Point(L, Rpvsfunction(0)), Nl, Nr)
+    if isSAS : 
 
-    ## Refinement at the SAS boundary
-    if args.refineleft :
-        x = mesh_f.coordinates()[:,0]
-        y = mesh_f.coordinates()[:,1]
+        logging.info('cell size : %e cm'%(DR))
 
-        #Deformation of the mesh
+        from sleep.mesh import mesh_model2d, load_mesh2d, set_mesh_size
+        import sys
 
-        def deform_mesh(x, y):
-            x=L*(x/L)**2.5
-            return [x, y]
+        gmsh.initialize(['','-format', 'msh2'])
 
-        x_bar, y_bar = deform_mesh(x, y)
-        xy_bar_coor = np.array([x_bar, y_bar]).transpose()
-        mesh_f.coordinates()[:] = xy_bar_coor
-        mesh_f.bounding_box_tree().build(mesh_f)
+        model = gmsh.model
+
+        import math
+        Apvs0=math.pi*Rpvs**2
+        Av0=math.pi*Rv**2
+        A0=Apvs0-Av0
+
+        # progressive mesh 
+        factory = model.occ
+        a = factory.addPoint(-Lsas, Rv,0)
+        b = factory.addPoint(L,Rv,0)
+        c = factory.addPoint(L,Rpvs,0)
+        d = factory.addPoint(0,Rpvs,0)
+        e = factory.addPoint(0,Rsas,0)
+        f = factory.addPoint(-Lsas,Rsas,0)
+
+        fluid_lines = [factory.addLine(*p) for p in ((a,b), (b, c), (c,d), (d,e),(e,f), (f,a))]
+        named_lines = dict(zip(('bottom', 'pvs_right', 'pvs_top', 'brain_surf','sas_top','sas_left'), fluid_lines))
+
+        fluid_loop = factory.addCurveLoop(fluid_lines)
+        fluid = factory.addPlaneSurface([fluid_loop])
+
+        factory.synchronize()
+
+        model.addPhysicalGroup(2, [fluid], 1)
+
+        for name in named_lines:
+            tag = named_lines[name]
+            model.addPhysicalGroup(1, [tag], tag)
+
+        # boxes for mesh refinement
+        cell_size=DR*(Rpvs-Rv)/(Rpvs-Rv)
+        boxes = []
+        # add box on the PVS for mesh
+        field = model.mesh.field
+        fid = 1
+        field.add('Box', fid)
+        field.setNumber(fid, 'XMin', 0)
+        field.setNumber(fid, 'XMax', L)
+        field.setNumber(fid, 'YMin', Rv)
+        field.setNumber(fid, 'YMax', Rpvs)
+        field.setNumber(fid, 'VIn', cell_size)
+        field.setNumber(fid, 'VOut', DR*50 )
+        field.setNumber(fid, 'Thickness', Rsas)
+
+        boxes.append(fid)
+        
+        # Combine
+        field.add('Min', 2)
+        field.setNumbers(2, 'FieldsList', boxes)    
+        field.setAsBackgroundMesh(2)
+
+        model.occ.synchronize()
+
+        h5_filename = outputfolder+'/mesh.h5'
+        tags = {'cell': {'F': 1},
+                'facet': {}}
+        mesh_model2d(model, tags, h5_filename)
+
+        mesh_f, markers, lookup = load_mesh2d(h5_filename)
+        
+        gmsh.finalize()
+
+    else :
+        # simple PVS mesh
+        logging.info('cell size : %e cm'%(np.sqrt(DR**2+DY**2)))
+        logging.info('nb cells: %i'%(Nl*Nr*2))
+
+        mesh_f= RectangleMesh(Point(0, Rvfunction(0)), Point(L, Rpvsfunction(0)), Nl, Nr)
+
+        ## Refinement at the SAS boundary
+        if args.refineleft :
+            x = mesh_f.coordinates()[:,0]
+            y = mesh_f.coordinates()[:,1]
+
+            #Deformation of the mesh
+
+            def deform_mesh(x, y):
+                x=L*(x/L)**2.5
+                return [x, y]
+
+            x_bar, y_bar = deform_mesh(x, y)
+            xy_bar_coor = np.array([x_bar, y_bar]).transpose()
+            mesh_f.coordinates()[:] = xy_bar_coor
+            mesh_f.bounding_box_tree().build(mesh_f)
 
     fluid_bdries = MeshFunction("size_t", mesh_f, mesh_f.topology().dim()-1,0)
 
@@ -534,40 +628,97 @@ def PVS_simulation(args):
 
     tol=min(DR,DY)/2 #cm
 
-    class Boundary_left(SubDomain):
-        def inside(self, x, on_boundary):
-            return on_boundary and near(x[0],xmin,tol) #left
+
+    if isSAS :
+       
+        class Boundary_sas_left(SubDomain):
+            def inside(self, x, on_boundary):
+                return on_boundary and near(x[0],-Lsas,tol) 
+
+        # downstream 
+        class Boundary_pvs_right(SubDomain):
+            def inside(self, x, on_boundary):
+                return on_boundary and near(x[0], L,tol)    
+
+        class Boundary_sas_top(SubDomain):
+                def inside(self, x, on_boundary):
+                    return on_boundary and near(x[1],Rsas,tol) and (x[0]<tol) 
+
+        class Boundary_pvs_top(SubDomain):
+                def inside(self, x, on_boundary):
+                    return on_boundary and near(x[1],Rpvs,tol) and (x[0]>-tol)
+
+        # brain
+        class Boundary_brainsurf(SubDomain):
+            def inside(self, x, on_boundary):
+                return on_boundary and near(x[0],0,tol) and (x[1]>Rpvs-tol)
 
 
-    class Boundary_right(SubDomain):
-        def inside(self, x, on_boundary):
-            return on_boundary and near(x[0],xmax,tol)# right
+        class Boundary_bottom(SubDomain):
+            def inside(self, x, on_boundary):
+                return on_boundary and near(x[1], ymin,tol) 
+            
 
 
-    class Boundary_bottom(SubDomain):
-        def inside(self, x, on_boundary):
-            return on_boundary and near(x[1], ymin,tol) #bottom
+
+        btop_sas= Boundary_sas_top()
+        btop_pvs=Boundary_pvs_top()
+        bbottom = Boundary_bottom()
+
+        bvert_left = Boundary_sas_left()
+        bvert_brain = Boundary_brainsurf()
+        bvert_right=Boundary_pvs_right()
+
+
+        btop_sas.mark(fluid_bdries,  1) 
+        btop_pvs.mark(fluid_bdries,  2) 
+        bbottom.mark(fluid_bdries,  3) 
+
+        bvert_left.mark(fluid_bdries,  4) 
+        bvert_brain.mark(fluid_bdries,  5) 
+        bvert_right.mark(fluid_bdries,  6) 
+
+        facet_lookup = {'sas_out':1,'pvs_tissue':2,'vessel':3,'sas_bone':4,'sas_tissue':5,'pvs_end':6}
+
+
+
+    else :
+        # simple PVS mesh
+
+        class Boundary_left(SubDomain):
+            def inside(self, x, on_boundary):
+                return on_boundary and near(x[0],xmin,tol) #left
+
+
+        class Boundary_right(SubDomain):
+            def inside(self, x, on_boundary):
+                return on_boundary and near(x[0],xmax,tol)# right
+
+
+        class Boundary_bottom(SubDomain):
+            def inside(self, x, on_boundary):
+                return on_boundary and near(x[1], ymin,tol) #bottom
+            
+        class Boundary_top(SubDomain):
+            def inside(self, x, on_boundary):
+                return on_boundary and near(x[1], ymax,tol) #top
+
+
+
+        btop= Boundary_top()
+        bbottom = Boundary_bottom()
+        bleft = Boundary_left()
+        bright = Boundary_right()
+
+
+        bbottom.mark(fluid_bdries,  2) 
+        btop.mark(fluid_bdries,  4)  
+        bleft.mark(fluid_bdries, 1) 
+        bright.mark(fluid_bdries,  3) 
+
         
-    class Boundary_top(SubDomain):
-        def inside(self, x, on_boundary):
-            return on_boundary and near(x[1], ymax,tol) #top
 
-
-
-    btop= Boundary_top()
-    bbottom = Boundary_bottom()
-    bleft = Boundary_left()
-    bright = Boundary_right()
-
-
-    bbottom.mark(fluid_bdries,  2) 
-    btop.mark(fluid_bdries,  4)  
-    bleft.mark(fluid_bdries, 1) 
-    bright.mark(fluid_bdries,  3) 
-
-    
-
-    facet_lookup = {'x_min': 1 ,'y_min': 2, 'x_max': 3, 'y_max': 4}
+        facet_lookup = {'sas_out': 1 ,'vessel': 2, 'pvs_end': 3, 'pvs_tissue': 4}
 
     facets_out << fluid_bdries
 
@@ -580,11 +731,11 @@ def PVS_simulation(args):
 
 
     if lateral_bc=='free' :
-        bcs_fluid = {'velocity': [(facet_lookup['y_min'],vf_bottom),
-                                (facet_lookup['y_max'], vf_top)],
+        bcs_fluid = {'velocity': [(facet_lookup['vessel'],vf_bottom),
+                                (facet_lookup['pvs_tissue'], vf_top)],
                     'traction': [],  
-                    'pressure': [(facet_lookup['x_min'], Constant(0)),
-                                (facet_lookup['x_max'], Constant(0))]}
+                    'pressure': [(facet_lookup['sas_out'], Constant(0)),
+                                (facet_lookup['pvs_end'], Constant(0))]}
 
     elif lateral_bc=='resistance' :
 
@@ -592,38 +743,48 @@ def PVS_simulation(args):
   
         # Compute pressure to impose according to the flow at previous time step and resistance.
 
-        bcs_fluid = {'velocity': [(facet_lookup['y_min'],vf_bottom),
-                                (facet_lookup['y_max'], vf_top)],
+        bcs_fluid = {'velocity': [(facet_lookup['vessel'],vf_bottom),
+                                (facet_lookup['pvs_tissue'], vf_top)],
                     'traction': [],  
-                    'pressure': [(facet_lookup['x_min'], Constant(0)),
-                                 (facet_lookup['x_max'], Rpressure)]}
+                    'pressure': [(facet_lookup['sas_out'], Constant(0)),
+                                 (facet_lookup['pvs_end'], Rpressure)]}
     else :
-        bcs_fluid = {'velocity': [(facet_lookup['y_min'],vf_bottom),
-                                (facet_lookup['y_max'], vf_top),
-                                (facet_lookup['x_max'], Constant((0,0)))], # I would like only normal flow to be zero 
+        bcs_fluid = {'velocity': [(facet_lookup['vessel'],vf_bottom),
+                                (facet_lookup['pvs_tissue'], vf_top),
+                                (facet_lookup['pvs_end'], Constant((0,0)))], # I would like only normal flow to be zero 
                     'traction': [],  
-                    'pressure': [(facet_lookup['x_min'], Constant(0))]}     
+                    'pressure': [(facet_lookup['sas_out'], Constant(0))]}     
 
     #### This is overwritten later depending on the scenario 
 
-    bcs_tracer = {'concentration': [(facet_lookup['x_min'], c_SAS)],
-                    'flux': [(facet_lookup['x_max'], rate_prod),
-                            (facet_lookup['y_max'], Constant(0)),
-                            (facet_lookup['y_min'], Constant(0))]}
+    bcs_tracer = {'concentration': [(facet_lookup['sas_out'], c_SAS)],
+                    'flux': [(facet_lookup['pvs_end'], rate_prod),
+                            (facet_lookup['pvs_tissue'], Constant(0)),
+                            (facet_lookup['vessel'], Constant(0))]}
 
     if lateral_bc=='free' :
-        bcs_tracer = {'concentration': [(facet_lookup['x_max'], Constant(0)),
-                                        (facet_lookup['x_min'], c_SAS)],
-                    'flux': [(facet_lookup['y_max'], Constant(0)),
-                            (facet_lookup['y_min'], Constant(0))]}
+        bcs_tracer = {'concentration': [(facet_lookup['pvs_end'], Constant(0)),
+                                        (facet_lookup['sas_out'], c_SAS)],
+                    'flux': [(facet_lookup['pvs_tissue'], Constant(0)),
+                            (facet_lookup['vessel'], Constant(0))]}
 
 
 
 
-    bcs_ale = {'dirichlet': [(facet_lookup['y_min'], uale_bottom),
-                            (facet_lookup['y_max'], uale_top)],
-               'neumann': [(facet_lookup['x_min'], Constant((0, 0))),
-                        (facet_lookup['x_max'], Constant((0, 0)))]}
+    # add BC on the extra boundary in the mesh of the SAS
+    if isSAS :
+        bcs_fluid['velocity'].append((facet_lookup['sas_bone'], Constant((0,0))))
+        bcs_fluid['velocity'].append((facet_lookup['sas_tissue'], Constant((0,0))))
+
+        bcs_tracer['flux'].append((facet_lookup['sas_bone'], Constant(0)))
+        bcs_tracer['flux'].append((facet_lookup['sas_tissue'], Constant(0)))
+
+
+    # BC for ALE (not used anymore)
+    bcs_ale = {'dirichlet': [(facet_lookup['vessel'], uale_bottom),
+                            (facet_lookup['pvs_tissue'], uale_top)],
+               'neumann': [(facet_lookup['sas_out'], Constant((0, 0))),
+                        (facet_lookup['pvs_end'], Constant((0, 0)))]}
 
 
 
@@ -750,7 +911,7 @@ def PVS_simulation(args):
 
     
     ### ALE deformation function
-    expressionDeformation=Expression(("0","(x[1]-rmax)/(rmax-rmin)*h+Rpvs-x[1]"), rmin=0, rmax=1 ,Rpvs=1,h=1, degree=1)
+    expressionDeformation=Expression(("0","x[1]<=rpvs ? (x[1]-rpvs)/(rpvs-rvessel)*htarget+rpvstarget-x[1]:rpvstarget-rpvs"), rvessel=0, rpvs=1 ,rpvstarget=1,htarget=1, degree=1)
 
     
     # Extend normal to 3d as GradAxisym(scalar) is 3-vector
@@ -768,7 +929,7 @@ def PVS_simulation(args):
         
 
         if lateral_bc=='resistance' :
-            Flow=assemble(2*pi*r*dot(uf_n, n)*ds(facet_lookup['x_max']))
+            Flow=assemble(2*pi*r*dot(uf_n, n)*ds(facet_lookup['pvs_end']))
 
             setattr(Rpressure, 'Q', Flow)
 
@@ -780,10 +941,10 @@ def PVS_simulation(args):
         xy=mesh_f.coordinates()
         x, y = xy.T
 
-        expressionDeformation.Rpvs=Rpvsfunction(time)      
-        expressionDeformation.h=Rpvsfunction(time)-Rvfunction(time)  
-        expressionDeformation.rmin=min(y)
-        expressionDeformation.rmax=max(y)   
+        expressionDeformation.rpvstarget=Rpvsfunction(time)      
+        expressionDeformation.htarget=Rpvsfunction(time)-Rvfunction(time)  
+        expressionDeformation.rvessel=min(y[x>0])# We look only in the PVS (x>0) not the SAS 
+        expressionDeformation.rpvs=max(y[x>0])#   
 
         #eta_f = interpolate(expressionDeformation,VectorFunctionSpace(mesh_f,"CG",1))
         eta_f=project(expressionDeformation,Va)
@@ -815,7 +976,7 @@ def PVS_simulation(args):
         # If the fluid is entering the PVS then we impose the concentration in the SAS at the left BC.
 
         #Fluid flow at the BC
-        FluidFlow=assemble(2*pi*r*dot(uf_, n)*ds(facet_lookup['x_min']))
+        FluidFlow=assemble(2*pi*r*dot(uf_, n)*ds(facet_lookup['sas_out']))
 
         #  n is directed in the outward direction
 
@@ -823,29 +984,29 @@ def PVS_simulation(args):
             # then the fluid is going out and we impose natural BC for concentration
 
             bcs_tracer = {'concentration': [],
-                        'flux': [(facet_lookup['x_min'], Constant(0)),
-                                (facet_lookup['x_max'], rate_prod),
-                                (facet_lookup['y_max'], Constant(0)),
-                                (facet_lookup['y_min'], Constant(0))]}
+                        'flux': [(facet_lookup['sas_out'], Constant(0)),
+                                (facet_lookup['pvs_end'], rate_prod),
+                                (facet_lookup['pvs_tissue'], Constant(0)),
+                                (facet_lookup['vessel'], Constant(0))]}
         else :
             # then the fluid is going in and we impose the SAS concentration
-            cmean=assemble(2*pi*r*c_n*ds(facet_lookup['x_min']))/assemble(2*pi*r*Constant(1)*ds(facet_lookup['x_min']))
+            cmean=assemble(2*pi*r*c_n*ds(facet_lookup['sas_out']))/assemble(2*pi*r*Constant(1)*ds(facet_lookup['sas_out']))
             # we allow the possibility to use a relaxation here
             alpha=0. # 0 means no relaxation
             c_imposed=(1-alpha)*cSAS+alpha*cmean
 
-            bcs_tracer = {'concentration': [(facet_lookup['x_min'], Constant(c_imposed))],
-                        'flux': [(facet_lookup['x_max'], rate_prod),
-                                (facet_lookup['y_max'], Constant(0)),
-                                (facet_lookup['y_min'], Constant(0))]}
+            bcs_tracer = {'concentration': [(facet_lookup['sas_out'], Constant(c_imposed))],
+                        'flux': [(facet_lookup['pvs_end'], rate_prod),
+                                (facet_lookup['pvs_tissue'], Constant(0)),
+                                (facet_lookup['vessel'], Constant(0))]}
 
 
         c_, T0= solve_adv_diff(Ct, velocity=uf_-eta_f/Constant(dt), phi=Constant(1), f=Constant(0), c_0=c_n, phi_0=Constant(1),
                             bdries=fluid_bdries, bcs=bcs_tracer, parameters=tracer_parameters)
 
 
-        Massflow=assemble(2*pi*r*dot(uf_-eta_f/Constant(dt), n)*c_*ds(facet_lookup['x_min']))
-        Massdiffusion=tracer_parameters["kappa"]*assemble(2*pi*r*dot(cyl.GradAxisym(c_), normal)*ds(facet_lookup['x_min']))
+        Massflow=assemble(2*pi*r*dot(uf_-eta_f/Constant(dt), n)*c_*ds(facet_lookup['sas_out']))
+        Massdiffusion=tracer_parameters["kappa"]*assemble(2*pi*r*dot(cyl.GradAxisym(c_), normal)*ds(facet_lookup['sas_out']))
 
 
         if sas_bc=='scenarioD' :
@@ -884,7 +1045,7 @@ def PVS_simulation(args):
         cSAS=m/VCSF
 
 
-        rate_prod.surface=assemble(2*pi*r*ds(facet_lookup['x_max']))
+        rate_prod.surface=assemble(2*pi*r*ds(facet_lookup['pvs_end']))
 
 
 
@@ -1089,7 +1250,7 @@ if __name__ == '__main__':
     my_parser.add_argument('-cycle',
                         type=str,
                         default='',
-                        help='cycle name, must be defined in the cycles.yml config file')
+                        help='Cycle name, must be defined in the cycles.yml config file')
     
     my_parser.add_argument('-refineleft',
                         type=bool,
@@ -1100,7 +1261,25 @@ if __name__ == '__main__':
                         type=float,
                         default=0,
                         help='Rate of the internal production of solute')
+
+    my_parser.add_argument('-SAS',
+                        type=bool,
+                        default=False,
+                        help='Add a SAS compartment on the left')
+
+    my_parser.add_argument('-Lsas','--length_sas',
+                        type=float,
+                        default=40e-4,
+                        help='length of the SAS in the axial direction')
+
+    my_parser.add_argument('-Rsas','--radius_sas',
+                        type=float,
+                        default=100e-4,
+                        help='radius of the SAS')        
+
+
     args = my_parser.parse_args()
+
 
 
     # Execute the PVS simulation
