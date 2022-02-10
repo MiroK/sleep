@@ -44,6 +44,10 @@ def solve_fluid(W, u_0, f,  bdries, bcs, parameters):
     # With convention that 0 bdries are inside all the exterior bdries must
     # be given conditions in bcs
     needed = set(bdries.array()) - set((0, ))
+
+    print('needed :',needed)
+    print('given :',reduce(operator.or_, tags))
+
     assert needed == reduce(operator.or_, tags)
                  
     u, p = TrialFunctions(W)
@@ -171,6 +175,7 @@ def solve_fluid_cyl(W,u_0, f,  bdries, bcs, parameters):
     # With convention that 0 bdries are inside all the exterior bdries must
     # be given conditions in bcs
     needed = set(bdries.array()) - set((0, ))
+ 
     assert needed == reduce(operator.or_, tags)
                  
     u, p = TrialFunctions(W)

@@ -432,66 +432,6 @@ def PVS_simulation(args):
 
     logging.info('Left BC scenario :',sas_bc)
 
-    c_SAS= Expression('m/VCSF', m=0, VCSF=40e-3, degree=2)
-
-    
-
-
-
-    #initial concentration in SAS
-    if sas_bc=='scenarioA':
-        cSAS=0
-    else :
-        cSAS=args.c0valueSAS
-
-    # number of vessels used for mass balance
-    Nvessels=6090
-    # initial volume of CSF in PVS
-    VPVS=((np.pi*Rpvsfunction(0)**2)-(np.pi*Rvfunction(0)**2))*L*Nvessels
-
-    # initial volume of CSF in SAS : assumed to be 10 times larger than volume in PVS
-    VCSF=10*VPVS #40e-3 
-
-    # initial pressure of the CSF
-    PCSF=4 # mmHg
-    # initial volume of arterial blood
-    Vblood=4e-3 # ml
-    # equivalent vessel length used for the compliance function and assessement of ICP
-    leq=Vblood/(np.pi*Rvfunction(0)**2)
-
-    # initial tracer mass in the CSF
-    m=cSAS*VCSF
-
-    # constant production of CSF
-    Qprod=6e-6  # ml/s
-    
-    # Outflow resistance
-    Rcsf=5/1.7e-5 # mmHg/(ml/s)
-    # CSF compliance
-    Ccsf=1e-3 #ml/mmHg
-    
-    
-
-
-    if sas_bc=='scenarioA' :
-        logging.info('Left : zero concentration')
-        # initial outflow of CSF (not used, just for output file)
-        Qout=0
-    elif sas_bc=='scenarioB' :
-        logging.info('Left : mass conservation, no CSF outflow')
-        # initial outflow of CSF
-        Qout=0
-    elif sas_bc=='scenarioC' :
-        logging.info('Left : mass conservation, constant CSF outflow')
-        # initial outflow of CSF
-        Qout=Qprod
-    elif sas_bc=='scenarioD' :
-        logging.info('Left : mass conservation, pressure dependent CSF outflow')
-        # initial outflow of CSF
-        Qout=Qprod
-        # venous pressure
-        Pss=PCSF-Qout*Rcsf
-
 
     if lateral_bc=='free' :
         logging.info('Right : zero concentration')
@@ -512,24 +452,26 @@ def PVS_simulation(args):
     logging.info('Top : no displacement')
     logging.info('Bottom : vessel displacement')
 
-
-
-
     # Mesh
     logging.info(title1('Meshing'))
 
 
     if isSAS : 
+        Rv=Rvfunction(0)
+        Rpvs=Rpvsfunction(0)
+        DR=(Rpvs-Rv)/Nr
 
         logging.info('cell size : %e cm'%(DR))
 
         from sleep.mesh import mesh_model2d, load_mesh2d, set_mesh_size
-        import sys
+        import gmsh
+
 
         gmsh.initialize(['','-format', 'msh2'])
 
         model = gmsh.model
 
+        
         import math
         Apvs0=math.pi*Rpvs**2
         Av0=math.pi*Rv**2
@@ -559,7 +501,7 @@ def PVS_simulation(args):
             model.addPhysicalGroup(1, [tag], tag)
 
         # boxes for mesh refinement
-        cell_size=DR*(Rpvs-Rv)/(Rpvs-Rv)
+
         boxes = []
         # add box on the PVS for mesh
         field = model.mesh.field
@@ -567,9 +509,9 @@ def PVS_simulation(args):
         field.add('Box', fid)
         field.setNumber(fid, 'XMin', 0)
         field.setNumber(fid, 'XMax', L)
-        field.setNumber(fid, 'YMin', Rv)
-        field.setNumber(fid, 'YMax', Rpvs)
-        field.setNumber(fid, 'VIn', cell_size)
+        field.setNumber(fid, 'YMin', Rvfunction(0))
+        field.setNumber(fid, 'YMax', Rpvsfunction(0))
+        field.setNumber(fid, 'VIn', DR)
         field.setNumber(fid, 'VOut', DR*50 )
         field.setNumber(fid, 'Thickness', Rsas)
 
@@ -757,16 +699,23 @@ def PVS_simulation(args):
 
     #### This is overwritten later depending on the scenario 
 
-    bcs_tracer = {'concentration': [(facet_lookup['sas_out'], c_SAS)],
+    bcs_tracer_in = {'concentration': [(facet_lookup['sas_out'],0)],
                     'flux': [(facet_lookup['pvs_end'], rate_prod),
                             (facet_lookup['pvs_tissue'], Constant(0)),
                             (facet_lookup['vessel'], Constant(0))]}
 
-    if lateral_bc=='free' :
-        bcs_tracer = {'concentration': [(facet_lookup['pvs_end'], Constant(0)),
-                                        (facet_lookup['sas_out'], c_SAS)],
-                    'flux': [(facet_lookup['pvs_tissue'], Constant(0)),
+    bcs_tracer_out = {'concentration': [],
+                    'flux': [(facet_lookup['sas_out'],Constant(0)),
+                            (facet_lookup['pvs_end'], rate_prod),
+                            (facet_lookup['pvs_tissue'], Constant(0)),
                             (facet_lookup['vessel'], Constant(0))]}
+
+    # todo : add possibility to have other BC at pvs_end
+    #if lateral_bc=='free' :
+    #    bcs_tracer = {'concentration': [(facet_lookup['pvs_end'], Constant(0)),
+    #                                    (facet_lookup['sas_out'], c_SAS)],
+    #                'flux': [(facet_lookup['pvs_tissue'], Constant(0)),
+    #                        (facet_lookup['vessel'], Constant(0))]}
 
 
 
@@ -775,9 +724,11 @@ def PVS_simulation(args):
     if isSAS :
         bcs_fluid['velocity'].append((facet_lookup['sas_bone'], Constant((0,0))))
         bcs_fluid['velocity'].append((facet_lookup['sas_tissue'], Constant((0,0))))
-
-        bcs_tracer['flux'].append((facet_lookup['sas_bone'], Constant(0)))
-        bcs_tracer['flux'].append((facet_lookup['sas_tissue'], Constant(0)))
+ 
+        bcs_tracer_in['flux'].append((facet_lookup['sas_bone'], Constant(0)))
+        bcs_tracer_in['flux'].append((facet_lookup['sas_tissue'], Constant(0)))
+        bcs_tracer_out['flux'].append((facet_lookup['sas_bone'], Constant(0)))
+        bcs_tracer_out['flux'].append((facet_lookup['sas_tissue'], Constant(0)))
 
 
     # BC for ALE (not used anymore)
@@ -822,6 +773,72 @@ def PVS_simulation(args):
 
     # Initialisation : 
     logging.info(title1("Initialisation"))
+
+
+
+    c_SAS= Expression('m/VCSF', m=0, VCSF=40e-3, degree=2)
+
+
+    #initial concentration in SAS
+    if sas_bc=='scenarioA':
+        cSAS=0
+    else :
+        cSAS=args.c0valueSAS
+
+    # number of vessels used for mass balance
+    Nvessels=6090
+    # initial volume of CSF in PVS
+    z, r = SpatialCoordinate(mesh_f)
+    ds = Measure('ds', domain=mesh_f, subdomain_data=fluid_bdries)
+    n = FacetNormal(mesh_f)
+
+    # volume of pvs
+    VPVS = 2*np.pi*assemble(Constant(1.0)*r*dx(mesh_f))
+
+    # initial volume of CSF in SAS : assumed to be 10 times larger than volume in PVS
+    VCSF=10*VPVS #40e-3 
+
+    # initial pressure of the CSF
+    PCSF=4 # mmHg
+    # initial volume of arterial blood
+    Vblood=4e-3 # ml
+    # equivalent vessel length used for the compliance function and assessement of ICP
+    leq=Vblood/(np.pi*Rvfunction(0)**2)
+
+    # initial tracer mass in the CSF
+    m=cSAS*VCSF
+
+    # constant production of CSF
+    Qprod=6e-6  # ml/s
+    
+    # Outflow resistance
+    Rcsf=5/1.7e-5 # mmHg/(ml/s)
+    # CSF compliance
+    Ccsf=1e-3 #ml/mmHg
+    
+    
+
+
+    if sas_bc=='scenarioA' :
+        logging.info('Left : zero concentration')
+        # initial outflow of CSF (not used, just for output file)
+        Qout=0
+    elif sas_bc=='scenarioB' :
+        logging.info('Left : mass conservation, no CSF outflow')
+        # initial outflow of CSF
+        Qout=0
+    elif sas_bc=='scenarioC' :
+        logging.info('Left : mass conservation, constant CSF outflow')
+        # initial outflow of CSF
+        Qout=Qprod
+    elif sas_bc=='scenarioD' :
+        logging.info('Left : mass conservation, pressure dependent CSF outflow')
+        # initial outflow of CSF
+        Qout=Qprod
+        # venous pressure
+        Pss=PCSF-Qout*Rcsf
+
+
     logging.info("\n * Fluid")
     logging.info("Velocity : zero field")
     logging.info("Pressure : zero field")
@@ -900,7 +917,7 @@ def PVS_simulation(args):
     # volume of pvs
     volume = 2*np.pi*assemble(Constant(1.0)*r*dx(mesh_f))
     # integral of concentration
-    intc = 2*np.pi*assemble(r*c_n*dx(mesh_f))
+    intc = 2*np.pi*assemble(r*c_n*(conditional(gt(x[0], 0), 1, 0))*dx(mesh_f))
 
 
     # tracer mass out of the system
@@ -910,7 +927,7 @@ def PVS_simulation(args):
     csv_mass.write('%e, %e, %e, %e, %e, %e, %e, %e, %e\n'%(time,Nvessels*intc,m,mout,Nvessels*intc+m+mout, Nvessels*volume, VCSF,PCSF,Qout))
 
     
-    ### ALE deformation function
+    # ALE deformation function
     expressionDeformation=Expression(("0","x[1]<=rpvs ? (x[1]-rpvs)/(rpvs-rvessel)*htarget+rpvstarget-x[1]:rpvstarget-rpvs"), rvessel=0, rpvs=1 ,rpvstarget=1,htarget=1, degree=1)
 
     
@@ -946,6 +963,7 @@ def PVS_simulation(args):
         expressionDeformation.rvessel=min(y[x>0])# We look only in the PVS (x>0) not the SAS 
         expressionDeformation.rpvs=max(y[x>0])#   
 
+
         #eta_f = interpolate(expressionDeformation,VectorFunctionSpace(mesh_f,"CG",1))
         eta_f=project(expressionDeformation,Va)
 
@@ -978,27 +996,23 @@ def PVS_simulation(args):
         #Fluid flow at the BC
         FluidFlow=assemble(2*pi*r*dot(uf_, n)*ds(facet_lookup['sas_out']))
 
-        #  n is directed in the outward direction
+        #  n is directed in the outward direction : is it ?
+
+        print('fluid flow : ', FluidFlow)
 
         if FluidFlow>0 : 
             # then the fluid is going out and we impose natural BC for concentration
-
-            bcs_tracer = {'concentration': [],
-                        'flux': [(facet_lookup['sas_out'], Constant(0)),
-                                (facet_lookup['pvs_end'], rate_prod),
-                                (facet_lookup['pvs_tissue'], Constant(0)),
-                                (facet_lookup['vessel'], Constant(0))]}
+            bcs_tracer=bcs_tracer_out
         else :
             # then the fluid is going in and we impose the SAS concentration
             cmean=assemble(2*pi*r*c_n*ds(facet_lookup['sas_out']))/assemble(2*pi*r*Constant(1)*ds(facet_lookup['sas_out']))
             # we allow the possibility to use a relaxation here
             alpha=0. # 0 means no relaxation
             c_imposed=(1-alpha)*cSAS+alpha*cmean
+            c_imposed=max(c_imposed,0)
 
-            bcs_tracer = {'concentration': [(facet_lookup['sas_out'], Constant(c_imposed))],
-                        'flux': [(facet_lookup['pvs_end'], rate_prod),
-                                (facet_lookup['pvs_tissue'], Constant(0)),
-                                (facet_lookup['vessel'], Constant(0))]}
+            bcs_tracer=bcs_tracer_in
+            bcs_tracer['concentration']= [(facet_lookup['sas_out'], Constant(c_imposed))]
 
 
         c_, T0= solve_adv_diff(Ct, velocity=uf_-eta_f/Constant(dt), phi=Constant(1), f=Constant(0), c_0=c_n, phi_0=Constant(1),
@@ -1020,24 +1034,24 @@ def PVS_simulation(args):
 
 
         if sas_bc=='scenarioA' :
-            if FluidFlow>0 :     
+            if FluidFlow>=0 :     
                 # mainly advection
                 mout+=dt*Nvessels*Massflow
-
-            # lost mass in the PVS due to diffusion
-            mout+=-dt*Nvessels*Massdiffusion
+                # lost mass in the PVS due to diffusion
+                mout+=-dt*Nvessels*Massdiffusion
                 
 
         else:
             # Advected mass
             m+=dt*Nvessels*Massflow-dt*Qout*cSAS
-            # Adding diffusion
-            m+=-dt*Nvessels*Massdiffusion
+            if FluidFlow>=0 : # when in-flow we impose c sas at the boundary so no c gradient
+                # Adding diffusion
+                m+=-dt*Nvessels*Massdiffusion
 
             mout+=Qout*cSAS*dt
 
         # update the volume of CSF
-        VCSF+=dt*Nvessels*FluidFlow
+        #VCSF+=dt*Nvessels*FluidFlow
         # should correspond to the volume change due to vessel dilation
         #VCSF+=np.pi*leq*(Rvfunction(time+dt)**2-Rvfunction(time)**2)
 
@@ -1080,8 +1094,13 @@ def PVS_simulation(args):
             y=mesh_points[:,1]
             xmin=min(x)
             xmax=max(x)
-            ymin=min(y)
-            ymax=max(y)
+            ymin=min(y[x>0])
+            ymax=max(y[x>0])
+
+            # update the coordinates
+            z, r = SpatialCoordinate(mesh_f)
+            ds = Measure('ds', domain=mesh_f, subdomain_data=fluid_bdries)
+            n = FacetNormal(mesh_f)
                         
             #slice_line = line([xmin,(ymin+ymax)/2],[xmax,(ymin+ymax)/2], 100)
 
@@ -1107,7 +1126,7 @@ def PVS_simulation(args):
             # volume of pvs
             volume = 2*np.pi*assemble(Constant(1.0)*r*dx(mesh_f))
             # integral of concentration
-            intc = 2*np.pi*assemble(r*c_*dx(mesh_f))
+            intc = 2*np.pi*assemble(r*c_*((conditional(gt(x[0], 0), 1, 0)))*dx(mesh_f))
 
             csv_mass.write('%e, %e, %e, %e, %e, %e, %e, %e, %e\n'%(time,Nvessels*intc,m,mout,Nvessels*intc+m+mout, Nvessels*volume, VCSF,PCSF,Qout))
             csv_mass.flush()
@@ -1290,3 +1309,5 @@ if __name__ == '__main__':
 # python3 PVS_cyclessimulation.py -j REMsleepnew -lpvs 200e-4 -c0init constant -c0value 50 -sasbc scenarioA -cycle REMsleep -tend 420 -toutput 1 -dt 2e-2 -r -1 -nr 4 -nl 50 -d 2e-7
 
 #python3 PVS_cyclessimulation.py -lpvs 0.02 -c0init constant -c0valueSAS 0 -c0valuePVS 0 -sasbc scenarioA -tend 400 -toutput 1 -dt 0.005 -r -1 -nr 8 -nl 100 -d 5.617252598067515e-07 -refineleft True  -j quiet-prod-scenarioA -cycle quietwake -productionrate 1e-9
+
+#python3 PVS_cyclessimulation.py -lpvs 0.02 -c0init constant -c0valueSAS 0 -c0valuePVS 50 -sasbc scenarioB -tend 400 -toutput 1 -dt 0.1 -r -1 -nr 4 -nl 100 -d 1e-06 -refineleft True  -j test-awake-scenarioB -cycle quietwake -SAS True
