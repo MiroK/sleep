@@ -4,6 +4,7 @@ import argparse
 import logging
 from datetime import datetime
 import os
+from ssl import ALERT_DESCRIPTION_UNRECOGNIZED_NAME
 
 import numpy as np
 from math import pi
@@ -399,13 +400,29 @@ def PVS_simulation(args):
         vf_bottom = Expression(('0',V_vessel ), tn = 0, degree=2)   # no slip no gap condition at vessel wall 
         uale_bottom = Expression(('0',UALE_vessel ), tn = 0, tnp1=1, degree=2) # displacement for ALE at vessel wall 
 
-        vf_top = Constant((0,0 ))
-        uale_top = Constant((0,0 )) 
+        vf_top = Constant((0,0))
+        uale_top = Constant((0,0)) 
 
         ## Is there a better way to do that ?
         Rvfunction=lambda t : functionR.subs(tn,t).evalf()
         Rpvsfunction=lambda t : Rpvs
         dRvdtfunction=lambda t : functionV.subs(tn,t).evalf()
+
+    if isSAS :
+        import sympy
+        tn = sympy.symbols("tn")
+        sin = sympy.sin
+        # We add the possibility for rigid moion of the brain 
+        a_rigid=args.arigid #cm
+        f_rigid=args.frigid #Hz
+        logging.info('ridig motion of the brain, amplitude : %.2e um'%a_rigid)
+        logging.info('ridig motion of the brain, frequency : %.2e Hz'%f_rigid)
+
+        functionY = a_rigid*sin(2*pi*f_rigid*tn) 
+        functionVbone = sympy.diff(functionY,tn) # velocity
+        V_bone = sympy.printing.ccode(functionVbone)
+
+        vf_bone =Expression(('0',V_bone ), tn = 0, degree=2)
 
     logging.info('\n * Lateral assumption')
     logging.info(lateral_bc)
@@ -722,7 +739,7 @@ def PVS_simulation(args):
 
     # add BC on the extra boundary in the mesh of the SAS
     if isSAS :
-        bcs_fluid['velocity'].append((facet_lookup['sas_bone'], Constant((0,0))))
+        bcs_fluid['velocity'].append((facet_lookup['sas_bone'], vf_bone))
         bcs_fluid['velocity'].append((facet_lookup['sas_tissue'], Constant((0,0))))
  
         bcs_tracer_in['flux'].append((facet_lookup['sas_bone'], Constant(0)))
@@ -741,7 +758,10 @@ def PVS_simulation(args):
 
 
     # We collect the time dependent BC for update
-    driving_expressions = (uale_bottom,vf_bottom,uale_top,vf_top)
+    driving_expressions = [uale_bottom,vf_bottom,uale_top,vf_top]
+
+    if isSAS:
+        driving_expressions.append(vf_bone)
 
 
 
@@ -859,15 +879,17 @@ def PVS_simulation(args):
         c_n =  project(c_0,Ct)
     elif init_concentration_type=='constant' :
         logging.info("Concentration : Uniform profile")
-        logging.info("Value=%e"%init_concentration_value)
-
-        ## Initialisation 
-        c_n =  project(Constant(init_concentration_value),Ct)
+        
+        if isSAS :
+            logging.info("Value in PVS=%e"%init_concentration_value)
+            logging.info("Value in SAS=%e"%cSAS)
+            c_0 = Expression('x[0]>0 ? cPVS : cSAS ', degree=2, cPVS=init_concentration_value, cSAS=cSAS)
+            c_n =  project(c_0,Ct)
+        else :
+            logging.info("Value=%e"%init_concentration_value)
+            c_n =  project(Constant(init_concentration_value),Ct)
     elif init_concentration_type=='null' :
         logging.info("Concentration : zero in the vessel")
-
-
-        ## Initialisation 
         c_n =  project(Constant(0),Ct)
     else :
         logging.info("Concentration : Uniform profile (default)")
@@ -917,7 +939,7 @@ def PVS_simulation(args):
     # volume of pvs
     volume = 2*np.pi*assemble(Constant(1.0)*r*dx(mesh_f))
     # integral of concentration
-    intc = 2*np.pi*assemble(r*c_n*(conditional(gt(x[0], 0), 1, 0))*dx(mesh_f))
+    intc = 2*np.pi*assemble(r*c_n*dx(mesh_f))
 
 
     # tracer mass out of the system
@@ -1126,7 +1148,7 @@ def PVS_simulation(args):
             # volume of pvs
             volume = 2*np.pi*assemble(Constant(1.0)*r*dx(mesh_f))
             # integral of concentration
-            intc = 2*np.pi*assemble(r*c_*((conditional(gt(x[0], 0), 1, 0)))*dx(mesh_f))
+            intc = 2*np.pi*assemble(r*c_*dx(mesh_f))
 
             csv_mass.write('%e, %e, %e, %e, %e, %e, %e, %e, %e\n'%(time,Nvessels*intc,m,mout,Nvessels*intc+m+mout, Nvessels*volume, VCSF,PCSF,Qout))
             csv_mass.flush()
@@ -1296,6 +1318,15 @@ if __name__ == '__main__':
                         default=100e-4,
                         help='radius of the SAS')        
 
+    my_parser.add_argument('-arigid',
+                        type=float,
+                        default=0,
+                        help='amplitude of the rigid motion (cm)')  
+
+    my_parser.add_argument('-frigid',
+                        type=float,
+                        default=10,
+                        help='frequency of the rigid motion (cm)')  
 
     args = my_parser.parse_args()
 
@@ -1311,3 +1342,7 @@ if __name__ == '__main__':
 #python3 PVS_cyclessimulation.py -lpvs 0.02 -c0init constant -c0valueSAS 0 -c0valuePVS 0 -sasbc scenarioA -tend 400 -toutput 1 -dt 0.005 -r -1 -nr 8 -nl 100 -d 5.617252598067515e-07 -refineleft True  -j quiet-prod-scenarioA -cycle quietwake -productionrate 1e-9
 
 #python3 PVS_cyclessimulation.py -lpvs 0.02 -c0init constant -c0valueSAS 0 -c0valuePVS 50 -sasbc scenarioB -tend 400 -toutput 1 -dt 0.1 -r -1 -nr 4 -nl 100 -d 1e-06 -refineleft True  -j test-awake-scenarioB -cycle quietwake -SAS True
+
+# todo : permettre couette
+# todo : permettre d'avoir la sortie masse avec le SAS
+# todo : entrance, clearance longueur x2 , clearance coeur 1 pc.
