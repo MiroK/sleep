@@ -143,11 +143,11 @@ def PVS_simulation(args):
 
     # initialise logging
 
-    logging.info(' ______     ______        _                 _       _   _             \n')
-    logging.info('|  _ \ \   / / ___|   ___(_)_ __ ___  _   _| | __ _| |_(_) ___  _ __  \n')
-    logging.info("| |_) \ \ / /\___ \  / __| | '_ ` _ \| | | | |/ _` | __| |/ _ \| '_ \ \n")
-    logging.info('|  __/ \ V /  ___) | \__ \ | | | | | | |_| | | (_| | |_| | (_) | | | |\n')
-    logging.info('|_|     \_/  |____/  |___/_|_| |_| |_|\__,_|_|\__,_|\__|_|\___/|_| |_|\n\n')
+    logging.info(' ______     ______        _                 _       _   _             ')
+    logging.info('|  _ \ \   / / ___|   ___(_)_ __ ___  _   _| | __ _| |_(_) ___  _ __  ')
+    logging.info("| |_) \ \ / /\___ \  / __| | '_ ` _ \| | | | |/ _` | __| |/ _ \| '_ \ ")
+    logging.info('|  __/ \ V /  ___) | \__ \ | | | | | | |_| | | (_| | |_| | (_) | | | |')
+    logging.info('|_|     \_/  |____/  |___/_|_| |_| |_|\__,_|_|\__,_|\__|_|\___/|_| |_|\n')
 
     logging.info(title1("Simulation of the PVS flow and tracer transport using stoke solver and diffusion-advection solver"))
 
