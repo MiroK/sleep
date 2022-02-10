@@ -20,6 +20,7 @@ import ulfy  # https://github.com/MiroK/ulfy
 def solve_adv_diff_cyl(W, velocity,phi, f, c_0, phi_0, bdries, bcs, parameters):
     '''Return concentration field'''
     info('Solving advection-diffusion for %d unknowns' % W.dim())
+
     assert W.ufl_element().family() == 'Lagrange'
     mesh = W.mesh()
     assert mesh.geometry().dim() == 2
@@ -42,6 +43,7 @@ def solve_adv_diff_cyl(W, velocity,phi, f, c_0, phi_0, bdries, bcs, parameters):
     # With convention that 0 bdries are inside all the exterior bdries must
     # be given conditions in bcs
     needed = set(bdries.array()) - set((0, ))
+
     assert needed == reduce(operator.or_, tags)
 
     # Collect bc values for possible temporal update in the integration
