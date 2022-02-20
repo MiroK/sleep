@@ -41,87 +41,80 @@ def ReadFixedEffect(file):
 #create sleep states :
 # the data here are read in the files provided by the statistical analysis of the peak to peak linescan analysis.
 folder='../../data/statistics/'
-vessel='pen_art_'
-mouse='cleanWT_'
-analysis='_sleep_'
-ftype='_fixedEffects'
+vessel='PenetratingArterioles'
+mouse='WT6_'
+analysis='sleep_'
+ftype='fixedEffects.txt'
 
 datasleep={}
 
-datasleep['Rv']=ReadFixedEffect(folder+vessel+mouse+'lumen'+analysis+'meanRadius'+ftype)
-datasleep['h0']=ReadFixedEffect(folder+vessel+mouse+'PVS'+analysis+'meanRadius'+ftype)
-datasleep['ampcard']=ReadFixedEffect(folder+vessel+mouse+'PVS'+analysis+'cardiac_amp'+ftype)
-datasleep['ampresp']=ReadFixedEffect(folder+vessel+mouse+'PVS'+analysis+'resp_amp'+ftype)
-datasleep['periodcard']=ReadFixedEffect(folder+vessel+mouse+'lumen'+analysis+'cardiac_period'+ftype)
-datasleep['periodresp']=ReadFixedEffect(folder+vessel+mouse+'lumen'+analysis+'resp_period'+ftype)
+datasleep['Rv']=ReadFixedEffect(folder+vessel+mouse+analysis+'lumen_'+'meanepisode_'+ftype)
+datasleep['h0']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'meanepisode_'+ftype)
 
+datasleep['ampcard']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'cardiac_amp_'+ftype)
+datasleep['ampresp']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'resp_amp_'+ftype)
+datasleep['ampLF']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'LF_amp_'+ftype)
+datasleep['ampVLF']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'VLF_amp_'+ftype)
 
-datasleep['ampLF']=ReadFixedEffect(folder+vessel+mouse+'PVS'+analysis+'lf_amp'+ftype)
-datasleep['ampVLF']=ReadFixedEffect(folder+vessel+mouse+'PVS'+analysis+'vlf_amp'+ftype)
-
-mouse='cleanWT2_' #new frequency band
-datasleep['periodLF']=ReadFixedEffect(folder+vessel+mouse+'lumen'+analysis+'lf_period'+ftype)
-datasleep['periodVLF']=ReadFixedEffect(folder+vessel+mouse+'lumen'+analysis+'vlf_period'+ftype)
-# 
+datasleep['periodcard']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'cardiac_period_'+ftype)
+datasleep['periodresp']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'resp_period_'+ftype)
+datasleep['periodLF']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'LF_period_'+ftype)
+datasleep['periodVLF']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'VLF_period_'+ftype)
 
 
 
 statename='baseline'
 freqtable={'cardiac':1/datasleep['periodcard'][statename],'resp':1/datasleep['periodresp'][statename],'LF':1/datasleep['periodLF'][statename],'VLF':1/datasleep['periodVLF'][statename]}
-amptable={'cardiac':datasleep['ampcard'][statename]/datasleep['h0'][statename],'resp':datasleep['ampresp'][statename]/datasleep['h0'][statename],'LF':datasleep['ampLF'][statename]/datasleep['h0'][statename],'VLF':datasleep['ampVLF'][statename]/datasleep['h0'][statename]}
-#amptable['cardiac']=amptable['cardiac']/2 # I think it is overestimated
-amptable['cardiac']=0.01 # arbitrary 1 pc for now
+amptable={'cardiac':datasleep['ampcard'][statename]/datasleep['h0'][statename]/2,'resp':datasleep['ampresp'][statename]/datasleep['h0'][statename]/2,'LF':datasleep['ampLF'][statename]/datasleep['h0'][statename]/2,'VLF':datasleep['ampVLF'][statename]/datasleep['h0'][statename]/2}
+
 Awake=State(name='Awake',Rv=datasleep['Rv'][statename]*1e-4,h0=datasleep['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 
 statename='stageNREM'
 freqtable={'cardiac':1/datasleep['periodcard'][statename],'resp':1/datasleep['periodresp'][statename],'LF':1/datasleep['periodLF'][statename],'VLF':1/datasleep['periodVLF'][statename]}
-amptable={'cardiac':datasleep['ampcard'][statename]/datasleep['h0'][statename],'resp':datasleep['ampresp'][statename]/datasleep['h0'][statename],'LF':datasleep['ampLF'][statename]/datasleep['h0'][statename],'VLF':datasleep['ampVLF'][statename]/datasleep['h0'][statename]}
-#amptable['cardiac']=amptable['cardiac']/2 # I think it is overestimated
-amptable['cardiac']=0.01 # arbitrary 1 pc for now
+amptable={'cardiac':datasleep['ampcard'][statename]/datasleep['h0'][statename]/2,'resp':datasleep['ampresp'][statename]/datasleep['h0'][statename]/2,'LF':datasleep['ampLF'][statename]/datasleep['h0'][statename]/2,'VLF':datasleep['ampVLF'][statename]/datasleep['h0'][statename]/2}
+
 NREM=State(name='NREM',Rv=datasleep['Rv'][statename]*1e-4,h0=datasleep['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 statename='stageIS'
 freqtable={'cardiac':1/datasleep['periodcard'][statename],'resp':1/datasleep['periodresp'][statename],'LF':1/datasleep['periodLF'][statename],'VLF':1/datasleep['periodVLF'][statename]}
-amptable={'cardiac':datasleep['ampcard'][statename]/datasleep['h0'][statename],'resp':datasleep['ampresp'][statename]/datasleep['h0'][statename],'LF':datasleep['ampLF'][statename]/datasleep['h0'][statename],'VLF':datasleep['ampVLF'][statename]/datasleep['h0'][statename]}
-#amptable['cardiac']=amptable['cardiac']/2 # I think it is overestimated
-amptable['cardiac']=0.01 # arbitrary 3 pc for now
+amptable={'cardiac':datasleep['ampcard'][statename]/datasleep['h0'][statename]/2,'resp':datasleep['ampresp'][statename]/datasleep['h0'][statename]/2,'LF':datasleep['ampLF'][statename]/datasleep['h0'][statename]/2,'VLF':datasleep['ampVLF'][statename]/datasleep['h0'][statename]/2}
+
 IS=State(name='IS',Rv=datasleep['Rv'][statename]*1e-4,h0=datasleep['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 statename='stageREM'
 freqtable={'cardiac':1/datasleep['periodcard'][statename],'resp':1/datasleep['periodresp'][statename],'LF':1/datasleep['periodLF'][statename],'VLF':1/datasleep['periodVLF'][statename]}
-amptable={'cardiac':datasleep['ampcard'][statename]/datasleep['h0'][statename],'resp':datasleep['ampresp'][statename]/datasleep['h0'][statename],'LF':datasleep['ampLF'][statename]/datasleep['h0'][statename],'VLF':datasleep['ampVLF'][statename]/datasleep['h0'][statename]}
-#amptable['cardiac']=amptable['cardiac']/2 # I think it is overestimated
-amptable['cardiac']=0.01 # arbitrary 3 pc for now
+amptable={'cardiac':datasleep['ampcard'][statename]/datasleep['h0'][statename]/2,'resp':datasleep['ampresp'][statename]/datasleep['h0'][statename]/2,'LF':datasleep['ampLF'][statename]/datasleep['h0'][statename]/2,'VLF':datasleep['ampVLF'][statename]/datasleep['h0'][statename]/2}
+
 REM=State(name='REM',Rv=datasleep['Rv'][statename]*1e-4,h0=datasleep['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 
 #######
 #create awake states :
 # the data here are read in the files provided by the statistical analysis of the peak to peak linescan analysis.
-analysis='_wake_'
+analysis='wake_'
 
 
 dataawake={}
 
-mouse='cleanWT_'
-dataawake['Rv']=ReadFixedEffect(folder+vessel+mouse+'lumen'+analysis+'meanRadius'+ftype)
-dataawake['h0']=ReadFixedEffect(folder+vessel+mouse+'PVS'+analysis+'meanRadius'+ftype)
-dataawake['ampcard']=ReadFixedEffect(folder+vessel+mouse+'PVS'+analysis+'cardiac_amp'+ftype)
-dataawake['ampresp']=ReadFixedEffect(folder+vessel+mouse+'PVS'+analysis+'resp_amp'+ftype)
-dataawake['periodcard']=ReadFixedEffect(folder+vessel+mouse+'lumen'+analysis+'cardiac_period'+ftype)
-dataawake['periodresp']=ReadFixedEffect(folder+vessel+mouse+'lumen'+analysis+'resp_period'+ftype)
+dataawake['Rv']=ReadFixedEffect(folder+vessel+mouse+analysis+'lumen_'+'meanepisode_'+ftype)
+dataawake['h0']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'meanepisode_'+ftype)
 
-dataawake['ampLF']=ReadFixedEffect(folder+vessel+mouse+'PVS'+analysis+'lf_amp'+ftype)
-dataawake['ampVLF']=ReadFixedEffect(folder+vessel+mouse+'PVS'+analysis+'vlf_amp'+ftype)
+dataawake['ampcard']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'cardiac_amp_'+ftype)
+dataawake['ampresp']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'resp_amp_'+ftype)
+dataawake['ampLF']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'LF_amp_'+ftype)
+dataawake['ampVLF']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'VLF_amp_'+ftype)
 
-mouse='cleanWT2_' #new frequency band
-dataawake['periodLF']=ReadFixedEffect(folder+vessel+mouse+'lumen'+analysis+'lf_period'+ftype)
-dataawake['periodVLF']=ReadFixedEffect(folder+vessel+mouse+'lumen'+analysis+'vlf_period'+ftype)
+dataawake['periodcard']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'cardiac_period_'+ftype)
+dataawake['periodresp']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'resp_period_'+ftype)
+dataawake['periodLF']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'LF_period_'+ftype)
+dataawake['periodVLF']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'VLF_period_'+ftype)
+
+
 
 #We arbitrarily set the VLF component in whisking stage same as in the baseline because we couldnt measure it (too short episodes)
-dataawake['ampVLF']['stageWhisking']=dataawake['ampVLF']['baseline']
-dataawake['periodVLF']['stageWhisking']=dataawake['periodVLF']['baseline']
+#dataawake['ampVLF']['stageWhisking']=dataawake['ampVLF']['baseline']
+#dataawake['periodVLF']['stageWhisking']=dataawake['periodVLF']['baseline']
 
 #Renormalisation to get the same baseline as sleeping states
 
@@ -132,27 +125,30 @@ for state in ['baseline','stageLocomotion','stageWhisking'] :
 
 statename='baseline'
 freqtable={'cardiac':1/dataawake['periodcard'][statename],'resp':1/dataawake['periodresp'][statename],'LF':1/dataawake['periodLF'][statename],'VLF':1/dataawake['periodVLF'][statename]}
-amptable={'cardiac':dataawake['ampcard'][statename]/dataawake['h0'][statename],'resp':dataawake['ampresp'][statename]/dataawake['h0'][statename],'LF':dataawake['ampLF'][statename]/dataawake['h0'][statename],'VLF':dataawake['ampVLF'][statename]/dataawake['h0'][statename]}
-#amptable['cardiac']=amptable['cardiac']/2 # I think it is overestimated
-amptable['cardiac']=0.01 # arbitrary 3 pc for now
-Quiet=State(name='Quiet',Rv=dataawake['Rv'][statename]*1e-4,h0=dataawake['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
+amptable={'cardiac':dataawake['ampcard'][statename]/dataawake['h0'][statename]/2,'resp':dataawake['ampresp'][statename]/dataawake['h0'][statename]/2,'LF':0.0,'VLF':0.0}
 
+Quiet=State(name='QuietnoVLF',Rv=dataawake['Rv'][statename]*1e-4,h0=dataawake['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
+
+
+statename='baseline'
+freqtable={'cardiac':1/dataawake['periodcard'][statename],'resp':1/dataawake['periodresp'][statename],'LF':1/dataawake['periodLF'][statename],'VLF':1/dataawake['periodVLF'][statename]}
+amptable={'cardiac':dataawake['ampcard'][statename]/dataawake['h0'][statename]/2,'resp':dataawake['ampresp'][statename]/dataawake['h0'][statename]/2,'LF':dataawake['ampLF'][statename]/dataawake['h0'][statename]/2,'VLF':dataawake['ampVLF'][statename]/dataawake['h0'][statename]/2}
+
+Quiet=State(name='Quiet',Rv=dataawake['Rv'][statename]*1e-4,h0=dataawake['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 
 statename='stageLocomotion'
 freqtable={'cardiac':1/dataawake['periodcard'][statename],'resp':1/dataawake['periodresp'][statename],'LF':1/dataawake['periodLF'][statename],'VLF':1/dataawake['periodVLF'][statename]}
-amptable={'cardiac':dataawake['ampcard'][statename]/dataawake['h0'][statename],'resp':dataawake['ampresp'][statename]/dataawake['h0'][statename],'LF':dataawake['ampLF'][statename]/dataawake['h0'][statename],'VLF':dataawake['ampVLF'][statename]/dataawake['h0'][statename]}
-#amptable['cardiac']=amptable['cardiac']/2 # I think it is overestimated
-amptable['cardiac']=0.01 # arbitrary 3 pc for now
+amptable={'cardiac':dataawake['ampcard'][statename]/dataawake['h0'][statename]/2,'resp':dataawake['ampresp'][statename]/dataawake['h0'][statename]/2,'LF':dataawake['ampLF'][statename]/dataawake['h0'][statename]/2,'VLF':dataawake['ampVLF'][statename]/dataawake['h0'][statename]/2}
+
 Locomotion=State(name='Locomotion',Rv=dataawake['Rv'][statename]*1e-4,h0=dataawake['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 
 
 statename='stageWhisking'
 freqtable={'cardiac':1/dataawake['periodcard'][statename],'resp':1/dataawake['periodresp'][statename],'LF':1/dataawake['periodLF'][statename],'VLF':1/dataawake['periodVLF'][statename]}
-amptable={'cardiac':dataawake['ampcard'][statename]/dataawake['h0'][statename],'resp':dataawake['ampresp'][statename]/dataawake['h0'][statename],'LF':dataawake['ampLF'][statename]/dataawake['h0'][statename],'VLF':dataawake['ampVLF'][statename]/dataawake['h0'][statename]}
-#amptable['cardiac']=amptable['cardiac']/2 # I think it is overestimated
-amptable['cardiac']=0.01 # arbitrary 3 pc for now
+amptable={'cardiac':dataawake['ampcard'][statename]/dataawake['h0'][statename]/2,'resp':dataawake['ampresp'][statename]/dataawake['h0'][statename]/2,'LF':dataawake['ampLF'][statename]/dataawake['h0'][statename]/2,'VLF':dataawake['ampVLF'][statename]/dataawake['h0'][statename]/2}
+
 Whisking=State(name='Whisking',Rv=dataawake['Rv'][statename]*1e-4,h0=dataawake['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 
