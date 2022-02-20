@@ -25,6 +25,16 @@
     - stage : Quiet
       duration : 200
 
+- name : quietwakenoVLF
+
+  architecture:
+        
+    - stage : QuietnoVLF
+      duration : 200
+
+    - stage : QuietnoVLF
+      duration : 200
+
 - name : lowlocomotion
 
   architecture:
