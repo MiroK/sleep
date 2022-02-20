@@ -1,0 +1,20 @@
+# Filter by correlation
+          if (linescan=="PVS"){
+            if (band=="VLF" | band=="LF"){
+              ddf <- filter(dd,corrlumen>0.2 & correndfoot>0.2)
+            }else{ #resp, cardiac and meanepisode
+              ddf <- filter(dd,corrlumen>0.7 & correndfoot>0.7)
+            }
+          }else if(linescan=="lumen"){
+            if (band=="VLF" | band=="LF"){
+              ddf <- filter(dd,corrlumen>0.3)
+            }else{ #resp, cardiac and meanepisode
+              ddf <- filter(dd,corrlumen>0.8)
+            }
+          }else if(linescan=="endfoot"){
+            if (band=="VLF" | band=="LF"){
+              ddf <- filter(dd,correndfoot>0.3)
+            }else{ #resp, cardiac and meanepisode
+              ddf <- filter(dd,correndfoot>0.8)
+            }
+          }
