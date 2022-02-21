@@ -104,7 +104,7 @@ def PVSbrain_simulation(args):
     #pvd files
     uf_out, pf_out= File(outputfolder+'fields'+'/uf.pvd'), File(outputfolder+'fields'+'/pf.pvd') 
     etas_out, qs_out, ps_out , = File(outputfolder+'fields'+'/us.pvd'), File(outputfolder+'fields'+'/qs.pvd'), File(outputfolder+'fields'+'/ps.pvd') 
-    c_out, phi_out=File(outputfolder+'fields'+'/c.pvd'),File(outputfolder+'fields'+'/phis.pvd')
+    c_out, phi_out, adv_out=File(outputfolder+'fields'+'/c.pvd'),File(outputfolder+'fields'+'/phis.pvd'),File(outputfolder+'fields'+'/adv.pvd')
    
     facets_out_fluid=File(outputfolder+'fields'+'/facets_fluid.pvd')
     facets_out_solid=File(outputfolder+'fields'+'/facets_solid.pvd')
@@ -874,13 +874,16 @@ def PVSbrain_simulation(args):
     # cf_0 = Expression('x[0]<= 150e-4 ? 1 : 0 ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss, Rv=Rv, Rpvs=Rpvs)
 
     #Gaussian on the left side
-    cf_0 = Expression('x[0]<= 50e-4 ? exp(-a*pow(x[0]-b, 2)): 0 ', degree=2, a=1/2/(2e-4)**2, b=0, Rv=Rv, Rpvs=Rpvs)
+    #cf_0 = Expression('x[0]<= 50e-4 ? exp(-a*pow(x[0]-b, 2)): 0 ', degree=2, a=1/2/(2e-4)**2, b=0, Rv=Rv, Rpvs=Rpvs)
 
     #Gaussian on the right side
     #cf_0 = Expression('exp(-a*pow(x[0]-b, 2)) ', degree=2, a=1/2/(150e-4)**2, b=L, Rv=Rv, Rpvs=Rpvs)
 
     # 1 in the PVS
     #cf_0 = Expression('x[1]<= Rpvs ? 1 : 0 ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss, Rv=Rv, Rpvs=Rpvs)
+
+    # 1 in the brain
+    cf_0 = Expression('x[1]>= Rpvs ? 1 : 0 ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss, Rv=Rv, Rpvs=Rpvs)
 
     # 1 every where
     #cf_0=Constant(1)
@@ -1381,7 +1384,7 @@ if __name__ == '__main__':
     my_parser.add_argument('-fi',
                         type=float,
                         nargs='+',
-                        default=[1],
+                        default=[10],
                         help='List of fi')
 
 
