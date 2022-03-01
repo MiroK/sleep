@@ -650,9 +650,10 @@ def PVSbrain_simulation(args):
     # Displacement in the solid domain
     # Fenics won't let us move mesh with quadratic displacement so
     Va_s = VectorFunctionSpace(mesh_s, 'CG', 1)
+    Va_f = VectorFunctionSpace(mesh_f, 'CG', 1)
 
     # Displacement in the full domain
-    Va_full = VectorFunctionSpace(mesh, 'CG', 2)
+    Va_full = VectorFunctionSpace(mesh, 'CG', 1)
 
     # CHECK here
     # Should I take  VectorElement / Finite elements or VectorFunctionSpace/FunctionSpace with 'CG',1 , 2?
@@ -716,8 +717,7 @@ def PVSbrain_simulation(args):
     p_interface = Function(FunctionSpace(mesh_s, 'DG', 0))
     traction_interface = Function(VectorFunctionSpace(mesh_s, 'DG', 1))  
 
-
-
+    
     logging.info('\n * Lateral assumption')
     logging.info(lateral_bc)
 
@@ -928,12 +928,12 @@ def PVSbrain_simulation(args):
 
         #Solve ALE and move mesh 
         # Transfert solid displacement at the interface to the fluid domain for ALE
+        
         transfer_into(eta_interface, Constant((0,0)), boundaries)
 
         etaf_n = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale,
                         parameters=ale_parameters)
 
-        #CHECK is it okay to do that ? the extrapolated part is set to 0 with the mask function
         etaf_n.set_allow_extrapolation(True)
 
         #CHECK project or asign ?
@@ -998,9 +998,21 @@ def PVSbrain_simulation(args):
 
     logging.info(title1("Run"))
 
+    delta_etas = Function(etas_n.function_space())
+    delta_eta = Function(eta_n.function_space())
+
+    #before we start :
+    # Check position of vessel
+    Rvpos=Rv+uale_bottom0((0,0,0))[1]
+    xy = mesh.coordinates().copy()          
+    x, y = xy.T    
+    ymin=y.min()
+    Rvsimu=ymin
+
+    print('Rv theorique init :',Rvpos)
+    print('Rv deformed mesh init :',Rvsimu)
 
 
-    
 
     # Time loop
     time = tshift
@@ -1013,7 +1025,7 @@ def PVSbrain_simulation(args):
     # We store the adv velocity and the deformation of the mesh in a file
     ##################
 
-    N_cycles_ini=5
+    N_cycles_ini=3
 
     logging.info(title1("Stokes - Biot over "+str(N_cycles_ini)+" cycles"))
 
@@ -1026,20 +1038,13 @@ def PVSbrain_simulation(args):
 
     Nsteps=int(period/dt)
 
-    sum_eta=project(Constant((0,0)),Va_full)
-    sum_etas=project(Constant((0,0)),Va_s)
 
     file_cumul=File(outputfolder+'fields'+'/cumul_meshdef.pvd')
 
-    sum_eta.rename("cumul_mesh_def", "tmp")
-    file_cumul << (sum_eta, 0)
+    eta_n.rename("cumul_mesh_def", "tmp")
+    file_cumul << (eta_n, 0)
 
 
-    Rvpos=0
-    xy = mesh_f.coordinates().copy()          
-    x, y = xy.T    
-    ymin=y.min()
-    Rvsimu=ymin
 
     for it in range(1,N_cycles_ini*Nsteps+1):
 
@@ -1054,7 +1059,6 @@ def PVSbrain_simulation(args):
             hasattr(expr, 'tnm1') and setattr(expr, 'tnm1', time-dt)
             hasattr(expr, 'tn') and setattr(expr, 'tn', time)
         
-        Rvpos+=uale_bottom0((0,0,0))[1]
 
 
         if lateral_bc=='resistance' :
@@ -1066,42 +1070,6 @@ def PVSbrain_simulation(args):
             print('Right outflow : %e \n'%Flow)
             setattr(Rpressure, 'Q', Flow)
 
-        #Solve ALE and move mesh 
-        # Transfert solid displacement at the interface to the fluid domain for ALE
-        transfer_into(eta_interface, etas_n, boundaries)
-
-        etaf_n = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale,
-                      parameters=ale_parameters)
-       
-
-        #CHECK if it okay to do that ? the extrapolated part is set to 0 with the mask function
-        etas_n.set_allow_extrapolation(True)
-        etaf_n.set_allow_extrapolation(True)
-
-
-        #CHECK project or asign ?
-        eta_n=project(mask_solid*etas_n+mask_fluid*etaf_n-eta_n,Va_full)#etaf_n
-
-        sum_eta=project(sum_eta+eta_n,Va_full)
-        
-
-        #This is quite long
-        #ALE.move(mesh_f, etaf_n)
-        #ALE.move(mesh_s, interpolate(etas_n, Va_s))
-        ALE.move(mesh, eta_n)
-
-        #is needed for the masks
-        #mesh_f.bounding_box_tree().build(mesh_f)
-        #mesh_s.bounding_box_tree().build(mesh_s)
-        mesh.bounding_box_tree().build(mesh)
-
-        #n_f, n_p = FacetNormal(mesh_f), FacetNormal(mesh_s)
-
-        xy = mesh.coordinates().copy()  
-        x, y = xy.T            
-        ymin=y.min()
-
-
         w=0.8
 
         #convergence steps
@@ -1111,30 +1079,39 @@ def PVSbrain_simulation(args):
         etas_ni.assign(etas_n)
         us_ni.assign(us_n)
 
-        # Update current solution
+        # estimate for fluid solution
         uf_ni.assign(uf_n)
         pf_ni.assign(pf_n)
-
 
         ps_ni.assign(ps_n)
 
         step=0
         while notconverged :
 
+            delta_etas=project(etas_ni-etas_n,Va_s)
+
+            # transfert values at the boundary before moving the mesh
+
             # Impose the velocity in the fluid at the interface, given dU/dt of the interface and the percolation velocity
-            transfer_into(vf_interface, (disp/Constant(dt) + us_ni), boundaries)
+            transfer_into(vf_interface, (delta_etas/Constant(dt) + us_ni), boundaries)
+            
+            transfer_into(eta_interface, etas_ni, boundaries)
+            
+            etaf_n = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale,
+                      parameters=ale_parameters)
 
             #Solve fluid problem in the deformed mesh    
             ALE.move(mesh_f, etaf_n)
             mesh_f.bounding_box_tree().build(mesh_f)    
+            #reverse displacement
+            revdisp = Function(etaf_n.function_space())
+            revdisp.vector()[:] = -1.0*etaf_n.vector()  
 
+            # Compute fluid in the deformed mesh
 
             uf_, pf_ = solve_fluid(Wf, u_n=uf_n, p_n=pf_n,  f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_fluid,
                                     parameters=fluid_parameters)
 
-            #reverse displacement
-            revdisp = Function(etaf_n.function_space())
-            revdisp.vector()[:] = -1.0*etaf_n.vector()
             # Get back to the initial frame configuration
             #This is quite long
             ALE.move(mesh_f,revdisp)
@@ -1145,7 +1122,6 @@ def PVSbrain_simulation(args):
             # Transfer the fluid pressure from fluid domain
             # Here I would prefer to impose the flow to take into account the membrane
             transfer_into(p_interface, pf_, boundaries)   
-
 
 
             # and normal stress from fluid  : Here it will be different with a membrane
@@ -1160,14 +1136,17 @@ def PVSbrain_simulation(args):
 
 
             # check for convergence
+            # maybe we can check convergence over other variables ?
 
             e=fem.norms.errornorm(etas_, etas_ni, norm_type='l2')
 
             print('epsilon,',e)
             if e<=1e-6 :
+                print('Converged epsilon in %i steps !'%step)
                 notconverged=False
 
             if step>=5 :
+                print('Converged nb of steps in %i steps !'%step)
                 notconverged=False
 
 
@@ -1181,12 +1160,45 @@ def PVSbrain_simulation(args):
             #us_ni=project(Constant(w)*us_+Constant((1-w))*us_ni,Ws.sub(1).collapse()) ### Why couldnt I use asign here?
             etas_ni.assign(etas_)
             us_ni.assign(us_)
-            #ps_ni.assign(ps_)
+            ps_ni.assign(ps_)
 
             step+=1
 
-        disp = Function(etas_n.function_space())
-        disp.vector()[:] = etas_.vector()-etas_n.vector()
+
+        # Once we are converged :
+        # compute a last time the fluid solution with converged solid interface
+
+
+
+        delta_etas=project(etas_ni-etas_n,Va_s)
+
+        # Impose the velocity in the fluid at the interface, given dU/dt of the interface and the percolation velocity
+        transfer_into(vf_interface, (delta_etas/Constant(dt) + us_ni), boundaries)
+            
+        transfer_into(eta_interface, etas_ni, boundaries)
+            
+        etaf_n = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale,
+                      parameters=ale_parameters)
+
+        #reverse displacement
+        revdisp = Function(etaf_n.function_space())
+        revdisp.vector()[:] = -1.0*etaf_n.vector()
+
+        #Solve fluid problem in the deformed mesh    
+        ALE.move(mesh_f, etaf_n)
+        mesh_f.bounding_box_tree().build(mesh_f)    
+
+
+        uf_, pf_ = solve_fluid(Wf, u_n=uf_n, p_n=pf_n,  f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_fluid,
+                                    parameters=fluid_parameters)
+
+        
+        # Get back to the initial frame configuration
+        #This is quite long
+        ALE.move(mesh_f,revdisp)
+        mesh_f.bounding_box_tree().build(mesh_f)
+
+
 
         # Update current solution
         uf_n.assign(uf_)
@@ -1195,6 +1207,33 @@ def PVSbrain_simulation(args):
         etas_n.assign(etas_)
         us_n.assign(us_)
         ps_n.assign(ps_)
+
+        #Displacement of the full mesh : 
+        # in the fluid it comes from the ALE, in the solid it comes from the solid displacement
+        etas_n.set_allow_extrapolation(True)
+        etaf_n.set_allow_extrapolation(True)
+
+        # full deformation from reference configuraiton
+        # maybe we need to come back to initial
+        eta_=project(mask_solid*etas_n+mask_fluid*etaf_n,Va_full)#etaf_n
+
+        # displacement from previous time step
+        delta_eta.vector()[:] =eta_.vector()-eta_n.vector()
+
+        # Move the full mesh
+        ALE.move(mesh, delta_eta)
+        mesh.bounding_box_tree().build(mesh)
+
+        eta_n.assign(eta_)
+
+        # Check position of vessel
+        Rvpos=Rv+uale_bottom0((0,0,0))[1]
+        xy = mesh.coordinates().copy()          
+        x, y = xy.T    
+        Rvsimu=y.min()
+
+        print('Rv theorique :',Rvpos)
+        print('Rv deformed mesh :',Rvsimu)
 
 
         #### project on the whole mesh the advection velocity and porosity
@@ -1207,30 +1246,31 @@ def PVSbrain_simulation(args):
         us_n.set_allow_extrapolation(True)
 
         #CHECK : I use us_n to be sure to have continuity at the interface. I dont know if this 'delayed' adv velocity in the solid domain is an issue.
-        advection_velocity=project(mask_solid*us_n+mask_fluid*(uf_-eta_n/Constant(dt)),FS_advvel)
+        advection_velocity=project(mask_solid*us_n+mask_fluid*(uf_-delta_eta/Constant(dt)),FS_advvel)
         #etaf_nm1.asign(etaf_n)       
         porositys_n.assign(porositys_)
 
 
-        
-
         #reset sum displacement at cycles
-        if (it % Nsteps)==0:
+        #if (it % Nsteps)==0:
         #    etas_n=project(-sum_etas,Va_s)
 
-            sum_etas=project(Constant((0,0)),Va_s)
-            sum_eta=project(Constant((0,0)),Va_full)
+        #    sum_etas=project(Constant((0,0)),Va_s)
+        #    sum_eta=project(Constant((0,0)),Va_full)
             
         ### Save the data needed for the adv_diff solver into h5 files
         ## On the last period
         if it>(N_cycles_ini-1)*Nsteps:
 
             # correction for last time step of the cycle
-            if it >(N_cycles_ini-1)*Nsteps + Nsteps-1:
-                # we add a little to eta_n in order to recover the initial state of the cycle
-                eta_n=project(eta_n-sum_eta,Va_full)
+            #if it >(N_cycles_ini-1)*Nsteps + Nsteps-1:
+            #    # we add a little to eta_n in order to recover the initial state of the cycle
+            #    #eta_n=project(eta_n-sum_eta,Va_full)
+            #    eta_n=project(Constant((0,0)),Va_full)
+
+
             cycletimes.append((it-(N_cycles_ini-1)*Nsteps)*dt)
-            #advvel_file.write(advection_velocity.vector(), "/values_{}".format(len(cycletimes)))
+            advvel_file.write(advection_velocity.vector(), "/values_{}".format(len(cycletimes)))
             porosity_file.write(porosity_.vector(), "/values_{}".format(len(cycletimes)))
             meshdeformation_file.write(eta_n.vector(), "/values_{}".format(len(cycletimes)))
             #cPickle.dump(cycletimes, open("times.cpickle", "w"))        # Save output
@@ -1270,8 +1310,8 @@ def PVSbrain_simulation(args):
             advection_velocity.rename("phi", "tmp")
             adv_out << (advection_velocity, it*dt)
 
-            sum_eta.rename("cumul_mesh_def", "tmp")
-            file_cumul << (sum_eta, it*dt)
+            eta_n.rename("cumul_mesh_def", "tmp")
+            file_cumul << (eta_n, it*dt)
 
 
 
@@ -1377,7 +1417,7 @@ if __name__ == '__main__':
     my_parser.add_argument('-ai',
                         type=float,
                         nargs='+',
-                        default=[0.1],
+                        default=[0.01],
                         help='List of ai')
 
     my_parser.add_argument('-fi',

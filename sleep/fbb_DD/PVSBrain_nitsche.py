@@ -1356,7 +1356,7 @@ if __name__ == '__main__':
     my_parser.add_argument('-ai',
                         type=float,
                         nargs='+',
-                        default=[0.1],
+                        default=[0.01],
                         help='List of ai')
 
     my_parser.add_argument('-fi',
