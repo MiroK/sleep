@@ -37,17 +37,24 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters, nitsche_penalty)
     needed = set(bdries.array()) - set((0, ))    
     # Validate elasticity bcs
     bcs_E = bcs['elasticity']
-    assert all(k in ('displacement', 'traction', 'nitsche_t') for k in bcs_E)
+    assert all(k in ('displacement','displacement_x','displacement_y', 'traction', 'nitsche_t') for k in bcs_E)
 
     displacement_bcs = bcs_E.get('displacement', ())  
+    #Add new BC
+    displacement_x_bcs = bcs_E.get('displacement_x', ())  
+    displacement_y_bcs = bcs_E.get('displacement_y', ())  
+
     traction_bcs = bcs_E.get('traction', ())
     nitsche_t_bcs = bcs_E.get('nitsche_t', ())
     # Tuple of pairs (tag, boundary value) is expected
     displacement_tags = set(item[0] for item in displacement_bcs)
+    #Add new BC
+    displacement_x_tags = set(item[0] for item in displacement_x_bcs)
+    displacement_y_tags = set(item[0] for item in displacement_y_bcs)
     traction_tags = set(item[0] for item in traction_bcs)
     nitsche_t_tags = set(item[0] for item in nitsche_t_bcs)
 
-    tags = (displacement_tags, traction_tags, nitsche_t_tags)
+    tags = (displacement_tags, traction_tags, nitsche_t_tags,displacement_x_tags, displacement_y_tags)
     for this, that in itertools.combinations(tags, 2):
         if this and that: assert not this & that
 
@@ -74,8 +81,8 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters, nitsche_penalty)
                             for bc in (displacement_bcs, traction_bcs, pressure_bcs, flux_bcs)),
                            [])
     # Nitsche is special
-    # We have (tag, (vel_data, stress_data))
-    [bdry_expressions.extend(val[1]) for val in nitsche_t_bcs]
+    [bdry_expressions.extend(val) for val in nitsche_t_bcs]
+
     # FEM ---
     eta, u, p = TrialFunctions(W)
     phi, v, q = TestFunctions(W)
@@ -137,18 +144,6 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters, nitsche_penalty)
     hF = CellDiameter(mesh)
     for tag, (vel_data, stress_data) in nitsche_t_bcs:
 
-        #a += (-inner(wedge(dot(sigma_B(eta, p), n), n), wedge(phi, n))*ds(tag)
-        #      -inner(wedge(dot(sigma_B(phi, q), n), n), wedge(eta, n))*ds(tag)
-        #      + Constant(nitsche_penalty)/hF*inner(wedge(eta, n), wedge(phi, n))*ds(tag)
-        #)
-
-        #L += (
-        #    # This is the velocity part
-        #    -inner(wedge(dot(sigma_B(phi, q), n), n), vel_data)*ds(tag)
-        #    + Constant(nitsche_penalty)/hF*inner(vel_data, wedge(phi, n))*ds(tag)
-        #    # Not the stress comess from
-        #    + inner(stress_data, dot(phi, n))*ds(tag)
-
         a += (
               #-inner(wedge(dot(sigma_B(eta, p), n), n), wedge(phi, n))*ds(tag)
               #-inner(wedge(dot(sigma_B(phi, q), n), n), wedge(eta, n))*ds(tag)
@@ -173,6 +168,10 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters, nitsche_penalty)
     # Displacement bcs and flux bcs go on the system
     bcs_strong = [DirichletBC(W.sub(0), value, bdries, tag) for tag, value in displacement_bcs]
     bcs_strong.extend([DirichletBC(W.sub(1), value, bdries, tag) for tag, value in flux_bcs])
+    # Displacement along x
+    bcs_strong.extend([DirichletBC(W.sub(0).sub(0), value, bdries, tag) for tag, value in displacement_x_bcs])
+    # Displacement along y 
+    bcs_strong.extend([DirichletBC(W.sub(0).sub(1), value, bdries, tag) for tag, value in displacement_y_bcs])
 
     # Discrete problem
     assembler = SystemAssembler(a, L, bcs_strong)
@@ -280,7 +279,7 @@ def mms_solid(parameters, round_top=False):
 # --------------------------------------------------------------------
 
 if __name__ == '__main__':
-    from sleep.mesh import load_mesh2d
+    #from sleep.mesh import load_mesh2d
 
     round_top = True
     
@@ -401,14 +400,13 @@ if __name__ == '__main__':
             for thing in things:
                 thing.time = 0.
 
+        # Elasticity: displacement bottom, traction for rest
+        # Darcy: pressure bottom and top, flux on sides
         bcs = {'elasticity': {'displacement': [(3, eta_exact)],
-                              'traction': [(1, tractions[1]), (2, tractions[2])],
-                              # Nitsche data is a pair of value for eta.t and sigma.n.n
-                              'nitsche_t': [(4, (tangent_displacements[4], normal_tractions[4]))],
-                              },
+                              'traction': [(1, tractions[1]), (2, tractions[2]), (4, tractions[4])]},
                'darcy': {'pressure': [(1, p_exact), (2, p_exact)],
                          'flux': [(3, u_exact), (4, u_exact)]}}
-                
+
         # Get the initial conditions
         E = FunctionSpace(mesh, Eelm)
         Q = FunctionSpace(mesh, Qelm)
@@ -419,7 +417,7 @@ if __name__ == '__main__':
         W = FunctionSpace(mesh, Welm)
         ans = solve_solid(W, f1, f2, eta_0, p_0, bdries=bdries, bcs=bcs,
                           parameters=parameters,
-                          nitsche_penalty=500)
+                          nitsche_penalty=200)
 
         eta_h, u_h, p_h, time = ans
         eta_exact.time, u_exact.time, p_exact.time = (time, )*3
@@ -431,3 +429,7 @@ if __name__ == '__main__':
         print('|eta-eta_h|_1', e_eta, '|u-uh|_div', e_u, '|p-ph|_0', e_p, '#dofs', W.dim())
         
         dt = dt/2
+
+    # for i, (num, true) in enumerate(zip((eta_h, u_h, p_h), (eta_exact, u_exact, p_exact))):
+    #     File('x%d_num.pvd' % i) << num
+    #     File('x%d_true.pvd' % i) << interpolate(true, num.function_space())
