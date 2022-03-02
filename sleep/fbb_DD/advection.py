@@ -67,19 +67,23 @@ def solve_adv_diff_cyl(W, velocity,phi, f, c_0, phi_0, bdries, bcs, parameters):
 
     c_0 = interpolate(c_0, W)
 
+    # Should fix error in PVSBRAIN if use psi0 (problem with phi_0 I guess)
     try:
         psi0 = TestFunction(phi_0.function_space())
     except AttributeError:
         psi0 = TestFunction(W)
+
     phi_0 = interpolate(phi_0, W)
     #
     #(inner((phi - phi_0)/dt, psi)*r*dx 
+    # (inner(phi*c/dt, psi)*r*dx - inner(phi_0*c_0/dt, psi0)*r*dx
     # Usual backward Euler
-    system =(inner(phi*c/dt, psi)*r*dx - inner(phi_0*c_0/dt, psi0)*r*dx+ dot(velocity, cyl.GradAxisym(c))*psi*r*dx +
+    system =(inner(phi*c/dt, psi)*r*dx - inner(phi_0*c_0/dt, psi)*r*dx + dot(velocity, cyl.GradAxisym(c))*psi*r*dx +
               inner(kappa*phi*cyl.GradAxisym(c), cyl.GradAxisym(psi))*r*dx - inner(f, psi)*r*dx)
     
     # SUPG stabilization
-    if parameters.get('supg', False):
+    #if parameters.get('supg', False):
+    if False :
         info(' Adding SUPG stabilization')
         h = CellDiameter(mesh)
 
@@ -183,11 +187,12 @@ def solve_adv_diff(W, velocity,phi, f, c_0, phi_0, bdries, bcs, parameters):
         psi0 = TestFunction(phi_0.function_space())
     except AttributeError:
         psi0 = TestFunction(W)
+
     phi_0 = interpolate(phi_0, W)
 
 
     # Usual backward Euler
-    system = (inner(phi*c/dt, psi)*dx - inner(phi_0*c_0/dt, psi0)*dx+ dot(velocity, grad(c))*psi*dx +
+    system = (inner(phi*c/dt, psi)*dx - inner(phi_0*c_0/dt, psi)*dx+ dot(velocity, grad(c))*psi*dx +
               kappa*phi*inner(grad(c), grad(psi))*dx - inner(f, psi)*dx)
     
     # SUPG stabilization
