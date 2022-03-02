@@ -855,43 +855,7 @@ def PVSbrain_simulation(args):
 
     
 
-    logging.info("\n * Tracer")
-    logging.info("Concentration : Gaussian profile")
-    logging.info("                Centered at mid length")
-    logging.info("                STD parameter = %e"%sigma_gauss)
-
-    mesh.bounding_box_tree().build(mesh) 
-
-    # Gaussian in the PVS
-    #cf_0 = Expression('x[1]<= Rpvs ? exp(-a*pow(x[0]-b, 2))*(x[1]-Rpvs)/(Rv-Rpvs) : 0 ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss, Rv=Rv, Rpvs=Rpvs)
-
-    # heavyside in the axial direction
-    # cf_0 = Expression('x[0]<= 150e-4 ? 1 : 0 ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss, Rv=Rv, Rpvs=Rpvs)
-
-    #Gaussian on the left side
-    cf_0 = Expression('x[0]<= 50e-4 ? exp(-a*pow(x[0]-b, 2)): 0 ', degree=2, a=1/2/(2e-4)**2, b=0, Rv=Rv, Rpvs=Rpvs)
-
-    #Gaussian on the right side
-    #cf_0 = Expression('exp(-a*pow(x[0]-b, 2)) ', degree=2, a=1/2/(150e-4)**2, b=L, Rv=Rv, Rpvs=Rpvs)
-
-    # 1 in the PVS
-    #cf_0 = Expression('x[1]<= Rpvs ? 1 : 0 ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss, Rv=Rv, Rpvs=Rpvs)
-
-    # 1 every where
-    #cf_0=Constant(1)
-
-    c_n =  project(cf_0,Ct)#
-
-    
- 
-    #class InitialCondition(UserExpression):
-    #    def eval_cell(self, value, x, ufc_cell):
-    #        if x[1] < Rpvs:
-    #            value[0] = cf_0(x)
-    #        else:
-    #            value[0] = 0.0
-    #c_n=Function(Ct)
-    #c_n.interpolate(InitialCondition())
+   
 
 
 
@@ -950,14 +914,13 @@ def PVSbrain_simulation(args):
     qs_out << (us_n, 0)
     ps_out << (ps_n, 0)
 
-    c_n.rename("c", "tmp")
-    c_out << (c_n, 0)
+    
 
     porosity_n.rename("phi", "tmp")
     phi_out << (porosity_n, 0)
 
-    files=[csv_p,csv_u,csv_c]
-    fields=[pf_n,uf_n.sub(0),c_n]
+    files=[csv_p,csv_u]
+    fields=[pf_n,uf_n.sub(0)]
     
     slice_line = line([0,(Rpvs+Rv)/2],[L,(Rpvs+Rv)/2], 100)
 
@@ -1011,10 +974,7 @@ def PVSbrain_simulation(args):
     sum_eta=project(Constant((0,0)),Va_full)
     sum_etas=project(Constant((0,0)),Va_s)
 
-    file_cumul=File(outputfolder+'fields'+'/cumul_meshdef.pvd')
-
-    sum_eta.rename("cumul_mesh_def", "tmp")
-    file_cumul << (sum_eta, 0)
+    
 
 
     Rvpos=0
@@ -1068,7 +1028,7 @@ def PVSbrain_simulation(args):
         eta_n=project(mask_solid*etas_n+mask_fluid*etaf_n,Va_full)#etaf_n
 
         sum_eta=project(sum_eta+eta_n,Va_full)
-        
+       
 
         #This is quite long
         ALE.move(mesh_f, etaf_n)
@@ -1090,7 +1050,7 @@ def PVSbrain_simulation(args):
         Rvsimu=ymin
 
 
-        w=0.5
+        w=0.1
 
         #convergence steps
         notconverged=True
@@ -1136,17 +1096,20 @@ def PVSbrain_simulation(args):
             # todo : I would like to add zero tangential displacement --> Nistche 
 
             # On pourrait faire le test de deformer avec l'ALE que le domaine fluid ? 
-            etas_, us_, ps_,T0 = solve_solid(Ws, f1=Constant((0, 0)), f2=Constant(0), eta_0=etas_0, p_0=ps_n,
+            etas_, us_, ps_,T0 = solve_solid(Ws, f1=Constant((0, 0)), f2=Constant(0), eta_0=etas_n, p_0=ps_n,
                                                     bdries=solid_bdries, bcs=bcs_solid, parameters=solid_parameters, nitsche_penalty=400)
 
 
+            # limit the solid displacement
+            etas_=project(Constant(w)*etas_+Constant((1-w))*etas_ni,Ws.sub(0).collapse()) 
+            us_=project(Constant(w)*us_+Constant((1-w))*us_ni,Ws.sub(1).collapse()) 
+            ps_=project(Constant(w)*ps_+Constant((1-w))*ps_ni,Ws.sub(2).collapse()) 
 
-            # check for convergence
-
+            # check for convergence : before or after limitation ?
             e=fem.norms.errornorm(etas_, etas_ni, norm_type='l2')
 
             print('epsilon,',e)
-            if e<=1e-6 :
+            if e<=1e-7*w*dt :
                 notconverged=False
 
             if step>=5 :
@@ -1154,16 +1117,15 @@ def PVSbrain_simulation(args):
 
             # Update intermediate solution
             uf_ni.assign(uf_)
-            pf_ni.assign(pf_)
-
-            #pf_ni=project(Constant(w)*pf_+Constant((1-w))*pf_ni,Wf.sub(1).collapse())
-            #etas_ni=project(Constant(w)*etas_+Constant((1-w))*etas_ni,Ws.sub(0).collapse()) ### Why couldnt I use asign here?
-            #us_ni=project(Constant(w)*us_+Constant((1-w))*us_ni,Ws.sub(1).collapse()) ### Why couldnt I use asign here?
-            etas_ni.assign(etas_)
+            pf_ni.assign(pf_)            
+            
+            #etas_ni.assign(etas_)
             us_ni.assign(us_)
             ps_ni.assign(ps_)
 
             step+=1
+
+        
 
         # Update current solution
         uf_n.assign(uf_)
@@ -1176,9 +1138,11 @@ def PVSbrain_simulation(args):
 
         #### project on the whole mesh the advection velocity and porosity
         #porositys_=project(porositys_n+solid_parameters['alpha']*div(etas_)+solid_parameters['s0']*(ps_-ps_n),FS_porositys)
-        porositys_=project((porositys_n+div(etas_))/(1+div(etas_)),FS_porositys)
+        #porositys_=project((porositys_n+div(etas_))/(1+div(etas_)),FS_porositys)
+        porositys_=project(porositys_n,FS_porositys)
         porositys_.set_allow_extrapolation(True)
         porosity_=project(mask_solid*porositys_+mask_fluid*Constant(1),FS_porosity)
+        
 
         uf_.set_allow_extrapolation(True)
         us_n.set_allow_extrapolation(True)
@@ -1189,29 +1153,31 @@ def PVSbrain_simulation(args):
         porositys_n.assign(porositys_)
 
 
-        
-
         #reset sum displacement at cycles
         if (it % Nsteps)==0:
-        #    etas_n=project(-sum_etas,Va_s)
-
+        #   etas_n=project(-sum_etas,Va_s)
             sum_etas=project(Constant((0,0)),Va_s)
             sum_eta=project(Constant((0,0)),Va_full)
+
+        if sum_eta.vector().norm('linf')>10e-4 :
+            print('max deformation : ',sum_eta.vector().norm('linf'))
+            exit()
             
         ### Save the data needed for the adv_diff solver into h5 files
         ## On the last period
         if it>(N_cycles_ini-1)*Nsteps:
+            cycletimes.append((it-(N_cycles_ini-1)*Nsteps)*dt)
+
+            advvel_file.write(advection_velocity.vector(), "/values_{}".format(len(cycletimes)))
+            porosity_file.write(porosity_.vector(), "/values_{}".format(len(cycletimes)))
 
             # correction for last time step of the cycle
             if it >(N_cycles_ini-1)*Nsteps + Nsteps-1:
                 # we add a little to eta_n in order to recover the initial state of the cycle
                 eta_n=project(eta_n-sum_eta,Va_full)
-            cycletimes.append((it-(N_cycles_ini-1)*Nsteps)*dt)
-            advvel_file.write(advection_velocity.vector(), "/values_{}".format(len(cycletimes)))
-            porosity_file.write(porosity_.vector(), "/values_{}".format(len(cycletimes)))
-            meshdeformation_file.write(eta_n.vector(), "/values_{}".format(len(cycletimes)))
-            #cPickle.dump(cycletimes, open("times.cpickle", "w"))        # Save output
+                sum_eta=project(Constant((0,0)),Va_full)
 
+            meshdeformation_file.write(sum_eta.vector(), "/values_{}".format(len(cycletimes))) 
 
         ## Save the outputs in vtk format    
         if(timestep % int(toutput_cycle/dt) == 0):
@@ -1249,8 +1215,7 @@ def PVSbrain_simulation(args):
             eta_n.rename("mesh_def", "tmp")
             File(outputfolder+'fields'+'/mesh_def.pvd') << (eta_n, it*dt)
 
-            sum_eta.rename("cumul_mesh_def", "tmp")
-            file_cumul << (sum_eta, it*dt)
+            
 
 
 
@@ -1260,6 +1225,58 @@ def PVSbrain_simulation(args):
     #################################
 
     logging.info(title1("Advection - diffusion up to the end "))
+
+
+    #Move the mesh, normaly this should be the reference mesh (sum eta = 0)
+    ALE.move(mesh, eta_n)
+    #is needed for the masks
+    mesh.bounding_box_tree().build(mesh)
+
+    file_cumul=File(outputfolder+'fields'+'/cumul_meshdef.pvd')
+    sum_eta=project(Constant((0,0)),Va_full)
+    sum_eta.rename("cumul_mesh_def", "tmp")
+    file_cumul << (sum_eta, 0)
+
+    logging.info("\n * Tracer")
+    logging.info("Concentration : Gaussian profile")
+    logging.info("                Centered at mid length")
+    logging.info("                STD parameter = %e"%sigma_gauss)
+
+    mesh.bounding_box_tree().build(mesh) 
+
+    # Gaussian in the PVS
+    #cf_0 = Expression('x[1]<= Rpvs ? exp(-a*pow(x[0]-b, 2))*(x[1]-Rpvs)/(Rv-Rpvs) : 0 ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss, Rv=Rv, Rpvs=Rpvs)
+
+    # heavyside in the axial direction
+    # cf_0 = Expression('x[0]<= 150e-4 ? 1 : 0 ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss, Rv=Rv, Rpvs=Rpvs)
+
+    #Gaussian on the left side
+    #cf_0 = Expression('x[0]<= 50e-4 ? exp(-a*pow(x[0]-b, 2)): 0 ', degree=2, a=1/2/(2e-4)**2, b=0, Rv=Rv, Rpvs=Rpvs)
+
+    #Gaussian on the right side
+    #cf_0 = Expression('exp(-a*pow(x[0]-b, 2)) ', degree=2, a=1/2/(150e-4)**2, b=L, Rv=Rv, Rpvs=Rpvs)
+
+    # 1 in the PVS
+    #cf_0 = Expression('x[1]<= Rpvs ? 1 : 0 ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss, Rv=Rv, Rpvs=Rpvs)
+
+    # 1 every where
+    cf_0=Constant(0)
+
+    c_n =  project(cf_0,Ct)#
+
+    
+ 
+    #class InitialCondition(UserExpression):
+    #    def eval_cell(self, value, x, ufc_cell):
+    #        if x[1] < Rpvs:
+    #            value[0] = cf_0(x)
+    #        else:
+    #            value[0] = 0.0
+    #c_n=Function(Ct)
+    #c_n.interpolate(InitialCondition())
+
+    c_n.rename("c", "tmp")
+    c_out << (c_n, 0)
 
     # Restart time loop
     timestep=0
@@ -1279,21 +1296,17 @@ def PVSbrain_simulation(args):
             #get data from files
             advvel_file.read(advection_velocity.vector(), "/values_{}".format(it+1), True)
             porosity_file.read(porosity_.vector(), "/values_{}".format(it+1), True)
-            meshdeformation_file.read(eta_n.vector(), "/values_{}".format(it+1), True)
+            meshdeformation_file.read(sum_eta.vector(), "/values_{}".format(it+1), True)
+
+            print('max deformation : ',sum_eta.vector().norm('linf'))
 
             timestep+=1
             print('time', current_time)
 
 
-            #This is quite long
-            ALE.move(mesh, eta_n)
-            #is needed for the masks
-            mesh.bounding_box_tree().build(mesh) 
-
             # Solve tracer problem
             # Todo : Maybe simplify and remove this as we are not using substeping ?
             tracer_parameters["T0"]=current_time
-
 
             c_, T0= solve_adv_diff(Ct, velocity=advection_velocity, phi=porosity_, f=Constant(0), c_0=c_n, phi_0=porosity_n,
                                     bdries=full_bdries, bcs=bcs_tracer, parameters=tracer_parameters)
@@ -1314,6 +1327,9 @@ def PVSbrain_simulation(args):
 
                 c_n.rename("c", "tmp")
                 c_out << (c_n, current_time)
+
+                sum_eta.rename("cumul_mesh_def", "tmp")
+                file_cumul << (sum_eta, current_time)
 
 
 if __name__ == '__main__':
