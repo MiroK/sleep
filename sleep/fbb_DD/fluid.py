@@ -45,8 +45,6 @@ def solve_fluid(W, u_n,p_n, f,  bdries, bcs, parameters):
     # be given conditions in bcs
     needed = set(bdries.array()) - set((0, ))
 
-    print('needed :',needed)
-    print('given :',reduce(operator.or_, tags))
 
     assert needed == reduce(operator.or_, tags)
                  
