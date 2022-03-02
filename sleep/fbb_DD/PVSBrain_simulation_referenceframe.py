@@ -1025,7 +1025,7 @@ def PVSbrain_simulation(args):
     # We store the adv velocity and the deformation of the mesh in a file
     ##################
 
-    N_cycles_ini=3
+    N_cycles_ini=1
 
     logging.info(title1("Stokes - Biot over "+str(N_cycles_ini)+" cycles"))
 
@@ -1328,6 +1328,8 @@ def PVSbrain_simulation(args):
     n_cycle=-1
     timestep=0
 
+
+    porosity_n=project(Constant(1)*mask_fluid+Constant(porosity_0)*mask_solid,FS_porosity)
 
 
     while n_cycle < N_cycles-1:
