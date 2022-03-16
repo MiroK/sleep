@@ -133,7 +133,7 @@ def PVSbrain_simulation(args):
     csv_p=open(args.output_folder+'/'+args.job_name+'_pressure.txt', 'w')
     csv_u=open(args.output_folder+'/'+args.job_name+'_velocity.txt', 'w')
     csv_c=open(args.output_folder+'/'+args.job_name+'_concentration.txt', 'w')
-    csv_geom=open(args.output_folder+'/'+args.job_name+'_geometry.txt', 'w')
+    csv_geomflow=open(args.output_folder+'/'+args.job_name+'_fluiddomain.txt', 'w')
 
     #time,  total mass in the domain, mass flux from the brain to sas, brain to PVS, PVS to SAS
 
@@ -1382,9 +1382,6 @@ def PVSbrain_simulation(args):
             qs_out << (us_n, it*dt)
             ps_out << (ps_n, it*dt)
 
-
-
-
             advection_velocity.rename("adv_vel", "tmp")
             File(outputfolder+'fields'+'/adv_vel.pvd') << (advection_velocity, it*dt)
 
@@ -1393,28 +1390,26 @@ def PVSbrain_simulation(args):
 
 
             # text outputs
-            # 
+            #Coordinate fluid mesh
+            z, r = SpatialCoordinate(mesh_f)
+            ds = Measure('ds', domain=mesh_f, subdomain_data=fluid_bdries)
+            n = FacetNormal(mesh_f)
+
+
             # Get the 1 D profiles in the fluid domain
-            mesh_points=mesh_f.coordinates()                                                      
-            x=mesh_points[:,0]
-            y=mesh_points[:,1]
+            xy = mesh_f.coordinates().copy()          
+            x, y = xy.T  
             xmin=min(x)
             xmax=max(x)
             ymin=min(y[x>0])
             ymax=max(y[x>0])
 
-            # update the coordinates
-            z, r = SpatialCoordinate(mesh_f)
-            ds = Measure('ds', domain=mesh_f, subdomain_data=fluid_bdries)
-            n = FacetNormal(mesh_f)
-                        
             logging.info('Rpvs : %e'%ymax)
             logging.info('Rvn : %e'%ymin)
 
             files=[csv_p,csv_u]
             fields=[pf_n,uf_n.sub(0)]
             field_names=['pressure (dyn/cm2)','axial velocity (cm/s)']
-
 
             for csv_file,field,name in zip(files,fields,field_names) :
                 #values = line_sample(slice_line, field)
@@ -1429,8 +1424,11 @@ def PVSbrain_simulation(args):
             # volume of pvs
             volume = 2*np.pi*assemble(Constant(1.0)*r*dx)
 
-            csv_geom.write('%e, %e, %e, %e\n'%(time, volume,ymin,ymax))
-            csv_geom.flush()        
+            flowSAS=assemble(2*pi*r*dot(uf_, n)*ds(facet_lookup['F_left']))
+            flowInterface=assemble(2*pi*r*dot(uf_, n)*ds(facet_lookup['Interface']))
+
+            csv_geomflow.write('%e, %e, %e, %e, %e ,%e \n'%(time, volume,ymin,ymax, flowSAS,flowInterface))
+            csv_geomflow.flush()        
 
 
 
