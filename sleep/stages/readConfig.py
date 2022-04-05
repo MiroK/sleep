@@ -42,7 +42,7 @@ def ReadFixedEffect(file):
 # the data here are read in the files provided by the statistical analysis of the peak to peak linescan analysis.
 folder='../../data/statistics/'
 vessel='PenetratingArterioles'
-mouse='WT6_'
+mouse='WT7_'
 analysis='sleep_'
 ftype='fixedEffects.txt'
 
@@ -66,26 +66,42 @@ datasleep['periodVLF']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'VLF_
 statename='baseline'
 freqtable={'cardiac':1/datasleep['periodcard'][statename],'resp':1/datasleep['periodresp'][statename],'LF':1/datasleep['periodLF'][statename],'VLF':1/datasleep['periodVLF'][statename]}
 amptable={'cardiac':datasleep['ampcard'][statename]/datasleep['h0'][statename]/2,'resp':datasleep['ampresp'][statename]/datasleep['h0'][statename]/2,'LF':datasleep['ampLF'][statename]/datasleep['h0'][statename]/2,'VLF':datasleep['ampVLF'][statename]/datasleep['h0'][statename]/2}
-
+amptable['cardiac']/=4 # must be reduced. Could use analytical law
+amptable['cardiac']=0
+amptable['resp']=0
+amptable['LF']=0
+amptable['VLF']=0
 Awake=State(name='Awake',Rv=datasleep['Rv'][statename]*1e-4,h0=datasleep['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 
 statename='stageNREM'
 freqtable={'cardiac':1/datasleep['periodcard'][statename],'resp':1/datasleep['periodresp'][statename],'LF':1/datasleep['periodLF'][statename],'VLF':1/datasleep['periodVLF'][statename]}
 amptable={'cardiac':datasleep['ampcard'][statename]/datasleep['h0'][statename]/2,'resp':datasleep['ampresp'][statename]/datasleep['h0'][statename]/2,'LF':datasleep['ampLF'][statename]/datasleep['h0'][statename]/2,'VLF':datasleep['ampVLF'][statename]/datasleep['h0'][statename]/2}
-
+amptable['cardiac']/=4 # must be reduced. Could use analytical law
+amptable['cardiac']=0
+amptable['resp']=0
+amptable['LF']=0
+amptable['VLF']=0
 NREM=State(name='NREM',Rv=datasleep['Rv'][statename]*1e-4,h0=datasleep['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 statename='stageIS'
 freqtable={'cardiac':1/datasleep['periodcard'][statename],'resp':1/datasleep['periodresp'][statename],'LF':1/datasleep['periodLF'][statename],'VLF':1/datasleep['periodVLF'][statename]}
 amptable={'cardiac':datasleep['ampcard'][statename]/datasleep['h0'][statename]/2,'resp':datasleep['ampresp'][statename]/datasleep['h0'][statename]/2,'LF':datasleep['ampLF'][statename]/datasleep['h0'][statename]/2,'VLF':datasleep['ampVLF'][statename]/datasleep['h0'][statename]/2}
-
+amptable['cardiac']/=4 # must be reduced. Could use analytical law
+amptable['cardiac']=0
+amptable['resp']=0
+amptable['LF']=0
+amptable['VLF']=0
 IS=State(name='IS',Rv=datasleep['Rv'][statename]*1e-4,h0=datasleep['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 statename='stageREM'
 freqtable={'cardiac':1/datasleep['periodcard'][statename],'resp':1/datasleep['periodresp'][statename],'LF':1/datasleep['periodLF'][statename],'VLF':1/datasleep['periodVLF'][statename]}
 amptable={'cardiac':datasleep['ampcard'][statename]/datasleep['h0'][statename]/2,'resp':datasleep['ampresp'][statename]/datasleep['h0'][statename]/2,'LF':datasleep['ampLF'][statename]/datasleep['h0'][statename]/2,'VLF':datasleep['ampVLF'][statename]/datasleep['h0'][statename]/2}
-
+amptable['cardiac']/=4 # must be reduced. Could use analytical law
+amptable['cardiac']=0
+amptable['resp']=0
+amptable['LF']=0
+amptable['VLF']=0
 REM=State(name='REM',Rv=datasleep['Rv'][statename]*1e-4,h0=datasleep['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 
@@ -126,21 +142,21 @@ for state in ['baseline','stageLocomotion','stageWhisking'] :
 statename='baseline'
 freqtable={'cardiac':1/dataawake['periodcard'][statename],'resp':1/dataawake['periodresp'][statename],'LF':1/dataawake['periodLF'][statename],'VLF':1/dataawake['periodVLF'][statename]}
 amptable={'cardiac':dataawake['ampcard'][statename]/dataawake['h0'][statename]/2,'resp':dataawake['ampresp'][statename]/dataawake['h0'][statename]/2,'LF':0.0,'VLF':0.0}
-
+amptable['cardiac']/=4 # must be reduced. Could use analytical law
 Quiet=State(name='QuietnoVLF',Rv=dataawake['Rv'][statename]*1e-4,h0=dataawake['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 
 statename='baseline'
 freqtable={'cardiac':1/dataawake['periodcard'][statename],'resp':1/dataawake['periodresp'][statename],'LF':1/dataawake['periodLF'][statename],'VLF':1/dataawake['periodVLF'][statename]}
 amptable={'cardiac':dataawake['ampcard'][statename]/dataawake['h0'][statename]/2,'resp':dataawake['ampresp'][statename]/dataawake['h0'][statename]/2,'LF':dataawake['ampLF'][statename]/dataawake['h0'][statename]/2,'VLF':dataawake['ampVLF'][statename]/dataawake['h0'][statename]/2}
-
+amptable['cardiac']/=4 # must be reduced. Could use analytical law
 Quiet=State(name='Quiet',Rv=dataawake['Rv'][statename]*1e-4,h0=dataawake['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 
 statename='stageLocomotion'
 freqtable={'cardiac':1/dataawake['periodcard'][statename],'resp':1/dataawake['periodresp'][statename],'LF':1/dataawake['periodLF'][statename],'VLF':1/dataawake['periodVLF'][statename]}
 amptable={'cardiac':dataawake['ampcard'][statename]/dataawake['h0'][statename]/2,'resp':dataawake['ampresp'][statename]/dataawake['h0'][statename]/2,'LF':dataawake['ampLF'][statename]/dataawake['h0'][statename]/2,'VLF':dataawake['ampVLF'][statename]/dataawake['h0'][statename]/2}
-
+amptable['cardiac']/=4 # must be reduced. Could use analytical law
 Locomotion=State(name='Locomotion',Rv=dataawake['Rv'][statename]*1e-4,h0=dataawake['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 
@@ -148,7 +164,7 @@ Locomotion=State(name='Locomotion',Rv=dataawake['Rv'][statename]*1e-4,h0=dataawa
 statename='stageWhisking'
 freqtable={'cardiac':1/dataawake['periodcard'][statename],'resp':1/dataawake['periodresp'][statename],'LF':1/dataawake['periodLF'][statename],'VLF':1/dataawake['periodVLF'][statename]}
 amptable={'cardiac':dataawake['ampcard'][statename]/dataawake['h0'][statename]/2,'resp':dataawake['ampresp'][statename]/dataawake['h0'][statename]/2,'LF':dataawake['ampLF'][statename]/dataawake['h0'][statename]/2,'VLF':dataawake['ampVLF'][statename]/dataawake['h0'][statename]/2}
-
+amptable['cardiac']/=4 # must be reduced. Could use analytical law
 Whisking=State(name='Whisking',Rv=dataawake['Rv'][statename]*1e-4,h0=dataawake['h0'][statename]*1e-4,freqtable=freqtable,amptable=amptable)
 
 

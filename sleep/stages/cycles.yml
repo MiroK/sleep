@@ -1,3 +1,13 @@
+- name : test
+
+  architecture:
+
+    - stage : Awake
+      duration : 5
+
+    - stage : REM
+      duration : 5 
+
 - name : normalsleep
 
   architecture:
