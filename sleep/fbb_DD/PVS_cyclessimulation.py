@@ -11,7 +11,7 @@ from math import pi
 
 from sleep.stages.cycles import State, Cycle
 from sleep.fbb_DD.advection import solve_adv_diff_cyl as solve_adv_diff
-from sleep.fbb_DD.fluid import solve_fluid as solve_fluid
+from sleep.fbb_DD.fluid import solve_fluid_cyl as solve_fluid
 from sleep.fbb_DD.ale import solve_ale_cyl as solve_ale
 from sleep.utils import EmbeddedMesh
 #from sleep.mesh import load_mesh2d

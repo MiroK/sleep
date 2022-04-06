@@ -44,12 +44,12 @@ folder='../../data/statistics/'
 vessel='PenetratingArterioles'
 mouse='WT7_'
 analysis='sleep_'
-ftype='fixedEffects.txt'
+ftype='fixedEffects'
 
 datasleep={}
 
-datasleep['Rv']=ReadFixedEffect(folder+vessel+mouse+analysis+'lumen_'+'meanepisode_'+ftype)
-datasleep['h0']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'meanepisode_'+ftype)
+datasleep['Rv']=ReadFixedEffect(folder+vessel+mouse+analysis+'lumen_'+'medianepisode_'+ftype)
+datasleep['h0']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'medianepisode_'+ftype)
 
 datasleep['ampcard']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'cardiac_amp_'+ftype)
 datasleep['ampresp']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'resp_amp_'+ftype)
@@ -113,8 +113,8 @@ analysis='wake_'
 
 dataawake={}
 
-dataawake['Rv']=ReadFixedEffect(folder+vessel+mouse+analysis+'lumen_'+'meanepisode_'+ftype)
-dataawake['h0']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'meanepisode_'+ftype)
+dataawake['Rv']=ReadFixedEffect(folder+vessel+mouse+analysis+'lumen_'+'medianepisode_'+ftype)
+dataawake['h0']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'medianepisode_'+ftype)
 
 dataawake['ampcard']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'cardiac_amp_'+ftype)
 dataawake['ampresp']=ReadFixedEffect(folder+vessel+mouse+analysis+'PVS_'+'resp_amp_'+ftype)
