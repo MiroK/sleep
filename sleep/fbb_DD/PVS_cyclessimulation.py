@@ -180,7 +180,7 @@ def PVS_simulation(args):
     logging.info('PVS length : %e cm' % L)
 
     # test presence of the SAS compartment on the mesh
-    isSAS = args.SAS
+    isSAS = args.issas
 
     if isSAS:
         logging.info('Add a SAS compartment on the left')
@@ -188,6 +188,7 @@ def PVS_simulation(args):
         Lsas = args.length_sas
         logging.info('SAS length : %e cm' % Lsas)
         logging.info('SAS radius : %e cm' % Rsas)
+
 
     # Mesh
     logging.info('\n * Mesh')
@@ -1259,7 +1260,7 @@ if __name__ == '__main__':
                            default=0,
                            help='Rate of the internal production of solute')
 
-    my_parser.add_argument('-SAS',
+    my_parser.add_argument('-issas',
                            type=bool,
                            default=False,
                            help='Add a SAS compartment on the left')
