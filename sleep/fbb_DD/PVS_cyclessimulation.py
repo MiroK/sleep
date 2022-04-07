@@ -385,16 +385,20 @@ def PVS_simulation(args):
         sin = sympy.sin
         sqrt = sympy.sqrt
 
+        # if a is the change of thickness
         functionR = Rpvs - (Rpvs-Rv)*(1+sum([a*sin(2*pi*f*tn+phi)
                                              for a, f, phi in zip(ai, fi, phii)]))  # displacement
-        R_vessel = sympy.printing.ccode(functionR)
+        functionUALE = -(Rpvs-Rv)*(1+sum([a*sin(2*pi*f*tnp1+phi) for a, f, phi in zip(ai, fi, phii)]))+(
+            Rpvs-Rv)*(1+sum([a*sin(2*pi*f*tn+phi) for a, f, phi in zip(ai, fi, phii)]))                                     
+
+        # if a is the change of area
+        functionR = sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))) # displacement
+        functionUALE=sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*sin(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)])))- sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))) 
+        
 
         functionV = sympy.diff(functionR, tn)  # velocity
         V_vessel = sympy.printing.ccode(functionV)
 
-        # Delta U for ALE.
-        functionUALE = -(Rpvs-Rv)*(1+sum([a*sin(2*pi*f*tnp1+phi) for a, f, phi in zip(ai, fi, phii)]))+(
-            Rpvs-Rv)*(1+sum([a*sin(2*pi*f*tn+phi) for a, f, phi in zip(ai, fi, phii)]))
         UALE_vessel = sympy.printing.ccode(functionUALE)
 
         # no slip no gap condition at vessel wall
