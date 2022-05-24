@@ -8,9 +8,8 @@ import numpy as np
 from math import pi, ceil
 
 from sleep.fbb_DD.domain_transfer import transfer_into
-from sleep.fbb_DD.advection import solve_adv_diff as solve_adv_diff
-#from sleep.fbb_DD.fluid import solve_fluid as solve_fluid
-from sleep.fbb_DD.fluid import solve_fluid
+from sleep.fbb_DD.advection import solve_adv_diff_cyl as solve_adv_diff
+from sleep.fbb_DD.fluid import solve_fluid_cyl as solve_fluid
 #import sleep.fbb_DD.cylindrical as cyl
 #todo : cylindrical for solid
 from sleep.fbb_DD.biot_nitsche import solve_solid
@@ -127,23 +126,7 @@ def PVSbrain_simulation(args):
     if not os.path.exists(outputfolder+'/fields'):
         os.makedirs(outputfolder+'/fields')
 
-    # Create output files
 
-    #txt files
-    csv_p=open(args.output_folder+'/'+args.job_name+'_pressure.txt', 'w')
-    csv_u=open(args.output_folder+'/'+args.job_name+'_velocity.txt', 'w')
-    csv_c=open(args.output_folder+'/'+args.job_name+'_concentration.txt', 'w')
-    csv_geomflow=open(args.output_folder+'/'+args.job_name+'_fluiddomain.txt', 'w')
-
-    #time,  total mass in the domain, mass flux from the brain to sas, brain to PVS, PVS to SAS
-
-    #pvd files
-    uf_out, pf_out= File(outputfolder+'fields'+'/uf.pvd'), File(outputfolder+'fields'+'/pf.pvd') 
-    etas_out, qs_out, ps_out , = File(outputfolder+'fields'+'/us.pvd'), File(outputfolder+'fields'+'/qs.pvd'), File(outputfolder+'fields'+'/ps.pvd') 
-    c_out, phi_out=File(outputfolder+'fields'+'/c.pvd'),File(outputfolder+'fields'+'/phi.pvd')
-   
-    facets_out_fluid=File(outputfolder+'fields'+'/facets_fluid.pvd')
-    facets_out_solid=File(outputfolder+'fields'+'/facets_solid.pvd')
 
     # Create logger
     logger = logging.getLogger()
@@ -704,6 +687,9 @@ def PVSbrain_simulation(args):
 
     facet_lookup = {'F_left': 1 ,'F_bottom': 2, 'F_right': 3, 'Interface': 4,'S_left': 7 ,'S_top': 6, 'S_right': 5}
 
+    facets_out_fluid=File(outputfolder+'fields'+'/facets_fluid.pvd')
+    facets_out_solid=File(outputfolder+'fields'+'/facets_solid.pvd')
+
     facets_out_fluid << fluid_bdries
 
     facets_out_solid << solid_bdries
@@ -761,6 +747,7 @@ def PVSbrain_simulation(args):
         
     tracer_parameters[coef] = Function(CoefSpace, assemble(form))
 
+    File(outputfolder+'fields'+'/apparentdiff.pvd') << tracer_parameters[coef]
 
     # masks
     maskspace=FunctionSpace(mesh, 'DG', 0)
@@ -1013,7 +1000,6 @@ def PVSbrain_simulation(args):
     logging.info("Velocity : zero field")
     logging.info("Pressure : zero field")
     uf_n = project(Constant((0, 0)), Wf.sub(0).collapse())
-    uf_0 = project(Constant((0, 0)), Wf.sub(0).collapse())
     pf_n =  project(Constant(0), Wf.sub(1).collapse())
     uf_ni = project(Constant((0, 0)), Wf.sub(0).collapse()) #intermediate
     pf_ni =  project(Constant(0), Wf.sub(1).collapse())
@@ -1033,6 +1019,9 @@ def PVSbrain_simulation(args):
 
     etas_0 = project(Constant((0, 0)), Ws.sub(0).collapse()) # always at the begining of a time step
 
+
+
+
     
 
    
@@ -1043,7 +1032,12 @@ def PVSbrain_simulation(args):
 
     porosity_n=project(Constant(1)*mask_fluid+Constant(porosity_0)*mask_tissue+Constant(porosity_0mem)*mask_membrane,FS_porosity)
 
-    porosity_n0=project(Constant(1)*mask_fluid+Constant(porosity_0)*mask_tissue+Constant(porosity_0mem)*mask_membrane,FS_porosity)
+    porosity_=porosity_n
+
+    #
+    advection_velocity=project(Constant((0,0)),FS_advvel)
+    sum_eta=project(Constant((0,0)),Va_full)
+    eta_n=project(Constant((0,0)),Va_full)
 
 
 
@@ -1078,357 +1072,385 @@ def PVSbrain_simulation(args):
         mesh_f.bounding_box_tree().build(mesh_f)
 
 
-    # Save initial state
-    uf_n.rename("vf", "tmp")
-    pf_n.rename("pf", "tmp")
-
-    uf_out << (uf_n, 0)
-    pf_out << (pf_n, 0)
- 
-
-    etas_n.rename("us", "tmp")
-    us_n.rename("qs", "tmp")
-    ps_n.rename("ps", "tmp")
-
-    etas_out << (etas_n, 0)
-    qs_out << (us_n, 0)
-    ps_out << (ps_n, 0)
-
-    
-
-    porosity_n.rename("phi", "tmp")
-    phi_out << (porosity_n, 0)
-
-    files=[csv_p,csv_u]
-    fields=[pf_n,uf_n.sub(0)]
-    
-    slice_line = line([0,(Rpvs+Rv)/2],[L,(Rpvs+Rv)/2], 100)
-
-    #todo add header for the cvs files
-
-    #todo : do the cross section integrate here
-
-    for csv_file,field in zip(files,fields) :
-        #print the x scale
-        values=np.linspace(0,L,100)
-        row=[0]+list(values)
-        csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
-        #print the initial 1D slice
-        values = line_sample(slice_line, field) 
-        row=[0]+list(values)
-        csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
 
 
     ############# RUN ###########
 
     logging.info(title1("Run"))
 
-
-
-    
-
-    # Time loop
-    time = tshift
-    timestep=0
-
-
-    ##############
-    # First we solve the Biot stokes problem on Ncyclces periods 
-    # We dont take one period to avoid the effect of initial conditions.
-    # We store the adv velocity and the deformation of the mesh in a file
-    ##################
-
-    N_cycles_ini=5
-
-    logging.info(title1("Stokes - Biot over "+str(N_cycles_ini)+" cycles"))
-
-    advvel_file = HDF5File(mesh.mpi_comm(), outputfolder+"advection_velocity.h5", "w")
-    meshdeformation_file= HDF5File(mesh.mpi_comm(), outputfolder+"mesh_deformation.h5", "w")
-    porosity_file = HDF5File(mesh.mpi_comm(), outputfolder+"porosity.h5", "w")
-
-    cycletimes=[]
-
-
     Nsteps=int(period/dt)
 
-    sum_eta=project(Constant((0,0)),Va_full)
-    sum_etas=project(Constant((0,0)),Va_s)
+    runphase1=True
 
+    if runphase1 :
+
+        # Create files and write initial states
+
+        # Create output files
+
+        #txt files
+        csv_p=open(args.output_folder+'/'+args.job_name+'_pressure.txt', 'w')
+        csv_u=open(args.output_folder+'/'+args.job_name+'_velocity.txt', 'w')
+        csv_geomflow=open(args.output_folder+'/'+args.job_name+'_fluiddomain.txt', 'w')
+
+        #time,  total mass in the domain, mass flux from the brain to sas, brain to PVS, PVS to SAS
+
+
+        #pvd files
+        uf_out, pf_out= File(outputfolder+'fields'+'/uf.pvd'), File(outputfolder+'fields'+'/pf.pvd') 
+        etas_out, qs_out, ps_out , = File(outputfolder+'fields'+'/us.pvd'), File(outputfolder+'fields'+'/qs.pvd'), File(outputfolder+'fields'+'/ps.pvd') 
+        advv_out, etatot_out= File(outputfolder+'fields'+'/advection_velocity.pvd'), File(outputfolder+'fields'+'/deformation.pvd') 
     
 
 
-    Rvpos=0
-    xy = mesh_f.coordinates().copy()          
-    x, y = xy.T    
-    ymin=y.min()
-    Rvsimu=ymin
 
-    for it in range(1,N_cycles_ini*Nsteps+1):
+        # Save initial state
+        uf_n.rename("vf", "tmp")
+        pf_n.rename("pf", "tmp")
 
+        uf_out << (uf_n, 0)
+        pf_out << (pf_n, 0)
 
-        # start of a time step
-        time=it*dt+tshift
-        timestep+=1
-        print('time', it*dt)
+        advection_velocity.rename("velocity", "tmp")
+        sum_eta.rename("deformation", "tmp")
 
-        # Update boundary conditions for the vessel wall displacement
-        for expr in driving_expressions:
-            hasattr(expr, 'tn') and setattr(expr, 'tn', time-dt)
-            hasattr(expr, 'tnp1') and setattr(expr, 'tnp1', time)
+        advv_out<< (advection_velocity, 0)
+        etatot_out<< (sum_eta, 0)
+
+        etas_n.rename("us", "tmp")
+        us_n.rename("qs", "tmp")
+        ps_n.rename("ps", "tmp")
+
+        etas_out << (etas_n, 0)
+        qs_out << (us_n, 0)
+        ps_out << (ps_n, 0)
+
         
-        Rvpos+=uale_bottom((0,0,0))[1]
 
-        print('Rvpos',Rvpos)
+        files=[csv_p,csv_u]
+        fields=[pf_n,uf_n.sub(0)]
+        
+        slice_line = line([0,(Rpvs+Rv)/2],[L,(Rpvs+Rv)/2], 100)
+
+        #todo add header for the cvs files
+
+        #todo : do the cross section integrate here
+
+        for csv_file,field in zip(files,fields) :
+            #print the x scale
+            values=np.linspace(0,L,100)
+            row=[0]+list(values)
+            csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
+            #print the initial 1D slice
+            values = line_sample(slice_line, field) 
+            row=[0]+list(values)
+            csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
+        
+
+        # Time loop
+        time = tshift
+        timestep=0
 
 
-        if lateral_bc=='resistance' :
-            z, r = SpatialCoordinate(mesh_f)
-            ds = Measure('ds', domain=mesh_f, subdomain_data=fluid_bdries)
-            n = FacetNormal(mesh_f)
-            Flow=assemble(2*pi*r*dot(uf_n, n)*ds(facet_lookup['F_right']))
+        ##############
+        # First we solve the Biot stokes problem on Ncyclces periods 
+        # We dont take one period to avoid the effect of initial conditions.
+        # We store the adv velocity and the deformation of the mesh in a file
+        ##################
 
-            print('Right outflow : %e \n'%Flow)
-            setattr(Rpressure, 'Q', Flow)
+        N_cycles_ini=3
 
-        #Solve ALE and move mesh 
-        # Transfert solid displacement at the interface to the fluid domain for ALE
-        transfer_into(eta_interface, etas_n, boundaries,tol=1E-10)
+        logging.info(title1("Stokes - Biot over "+str(N_cycles_ini)+" cycles"))
 
-        etaf_n = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale,
-                      parameters=ale_parameters)
+        advvel_file = HDF5File(mesh.mpi_comm(), outputfolder+"advection_velocity.h5", "w")
+        meshdeformation_file= HDF5File(mesh.mpi_comm(), outputfolder+"mesh_deformation.h5", "w")
+        porosity_file = HDF5File(mesh.mpi_comm(), outputfolder+"porosity.h5", "w")
 
-        #CHECK if it okay to do that ? the extrapolated part is set to 0 with the mask function
-        etas_n.set_allow_extrapolation(True)
-        etaf_n.set_allow_extrapolation(True)
+        cycletimes=[]
 
 
-        #CHECK project or asign ?
-        eta_n=project(mask_solid*etas_n+mask_fluid*etaf_n,Va_full)#etaf_n
+        
 
-        sum_eta=project(sum_eta+eta_n,Va_full)
-       
+        sum_eta=project(Constant((0,0)),Va_full)
+        sum_etas=project(Constant((0,0)),Va_s)
 
-        #This is quite long
-        ALE.move(mesh_f, etaf_n)
-        ALE.move(mesh_s, interpolate(etas_n, Va_s))
-        ALE.move(mesh, eta_n)
+        
 
-        #is needed for the masks
-        mesh_f.bounding_box_tree().build(mesh_f)
-        mesh_s.bounding_box_tree().build(mesh_s)
-        mesh.bounding_box_tree().build(mesh)
 
-        n_f, n_p = FacetNormal(mesh_f), FacetNormal(mesh_s)
-
-        xy = mesh.coordinates().copy()  
-        x, y = xy.T            
+        Rvpos=0
+        xy = mesh_f.coordinates().copy()          
+        x, y = xy.T    
         ymin=y.min()
-
-        print('Rvpossimu',ymin-Rvsimu)
         Rvsimu=ymin
 
-
-        w=0.1
-
-        #convergence steps
-        notconverged=True
-
-        # estimate of solid displacement : 
-        etas_ni.assign(etas_n)
-        us_ni.assign(us_n)
-
-        # Update current solution
-        uf_ni.assign(uf_n)
-        pf_ni.assign(pf_n)
+        for it in range(1,N_cycles_ini*Nsteps+1):
 
 
-        ps_ni.assign(ps_n)
+            # start of a time step
+            time=it*dt+tshift
+            timestep+=1
+            print('time', it*dt)
 
-        solid_parameters['T0']=time
-        solid_parameters['nsteps']=1
+            # Update boundary conditions for the vessel wall displacement
+            for expr in driving_expressions:
+                hasattr(expr, 'tn') and setattr(expr, 'tn', time-dt)
+                hasattr(expr, 'tnp1') and setattr(expr, 'tnp1', time)
+            
+            Rvpos+=uale_bottom((0,0,0))[1]
 
-        step=0
-        while notconverged :
+            print('Rvpos',Rvpos)
 
-            #Solve fluid problem        
+
+            if lateral_bc=='resistance' :
+                z, r = SpatialCoordinate(mesh_f)
+                ds = Measure('ds', domain=mesh_f, subdomain_data=fluid_bdries)
+                n = FacetNormal(mesh_f)
+                Flow=assemble(2*pi*r*dot(uf_n, n)*ds(facet_lookup['F_right']))
+
+                print('Right outflow : %e \n'%Flow)
+                setattr(Rpressure, 'Q', Flow)
+
+            #Solve ALE and move mesh 
+            # Transfert solid displacement at the interface to the fluid domain for ALE
+            transfer_into(eta_interface, etas_n, boundaries,tol=1E-10)
+
+            etaf_n = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale,
+                        parameters=ale_parameters)
+
+            #CHECK if it okay to do that ? the extrapolated part is set to 0 with the mask function
+            etas_n.set_allow_extrapolation(True)
+            etaf_n.set_allow_extrapolation(True)
+
+
+            #CHECK project or asign ?
+            eta_n=project(mask_solid*etas_n+mask_fluid*etaf_n,Va_full)#etaf_n
+
+            sum_eta=project(sum_eta+eta_n,Va_full)
+        
+
+            #This is quite long
+            ALE.move(mesh_f, etaf_n)
+            ALE.move(mesh_s, interpolate(etas_n, Va_s))
+            ALE.move(mesh, eta_n)
+
+            #is needed for the masks
+            mesh_f.bounding_box_tree().build(mesh_f)
+            mesh_s.bounding_box_tree().build(mesh_s)
+            mesh.bounding_box_tree().build(mesh)
+
+            n_f, n_p = FacetNormal(mesh_f), FacetNormal(mesh_s)
+
+            xy = mesh.coordinates().copy()  
+            x, y = xy.T            
+            ymin=y.min()
+
+            print('Rvpossimu',ymin-Rvsimu)
+            Rvsimu=ymin
+
+
+            w=0.1
+
+            #convergence steps
+            notconverged=True
+
+            # estimate of solid displacement : 
+            etas_ni.assign(etas_n)
+            us_ni.assign(us_n)
+
+            # Update current solution
+            uf_ni.assign(uf_n)
+            pf_ni.assign(pf_n)
+
+
+            ps_ni.assign(ps_n)
+
+            solid_parameters['T0']=time
+            solid_parameters['nsteps']=1
+
+            step=0
+            while notconverged :
+
+                #Solve fluid problem        
+                    
                 
+                # Impose the velocity in the fluid at the interface, given dU/dt of the interface and the percolation velocity
+                transfer_into(vf_interface, (etas_ni/Constant(dt) + us_ni), boundaries,tol=1E-10)
+
+                uf_, pf_ = solve_fluid(Wf, u_0=uf_n,  f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_fluid,
+                                        parameters=fluid_parameters)
+
+
+                # Solve porous problem
+                # Transfer the fluid pressure from fluid domain
+                # Here I would prefer to impose the flow to take into account the membrane
+                transfer_into(p_interface, pf_, boundaries,tol=1E-10)   
+
+
+
+                # and normal stress from fluid  : Here it will be different with a membrane
+                # the transfer with p interface is sufficient.
+                #transfer_into(traction_interface,-dot(sigma_f(uf_ni, pf_ni), n_f),boundaries) 
+
+                # todo : I would like to add zero tangential displacement --> Nistche 
+
+                # On pourrait faire le test de deformer avec l'ALE que le domaine fluid ? 
+                etas_, us_, ps_,T0 = solve_solid(Ws, f1=Constant((0, 0)), f2=Constant(0), eta_0=etas_n, p_0=ps_n,
+                                                        bdries=solid_bdries, bcs=bcs_solid, parameters=solid_parameters, nitsche_penalty=600)
+
+
+
+                # check for convergence : before or after limitation ?
+                e=fem.norms.errornorm(etas_, etas_ni, norm_type='l2')
+
+                print('epsilon,',e)
+                if e<=1e-7*w*dt :
+                #if e<=1e-2*w*dt :
+                    notconverged=False
+
+                if step>=5 :
+                    notconverged=False
+
+                # Update intermediate solution
+                uf_ni.assign(uf_)
+                pf_ni.assign(pf_)            
+                
+                # limit the solid displacement
+                #etas_ni.assign(etas_)
+                etas_ni=project(Constant(w)*etas_+Constant((1-w))*etas_ni,Ws.sub(0).collapse()) 
+                us_ni.assign(us_)
+                ps_ni.assign(ps_)
+
+                step+=1
+
             
-            # Impose the velocity in the fluid at the interface, given dU/dt of the interface and the percolation velocity
-            transfer_into(vf_interface, (etas_ni/Constant(dt) + us_ni), boundaries,tol=1E-10)
 
-            uf_, pf_ = solve_fluid(Wf, u_n=uf_n, p_n=pf_n,  f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_fluid,
-                                    parameters=fluid_parameters)
+            # Update current solution
+            uf_n.assign(uf_)
+            pf_n.assign(pf_)
 
-
-            # Solve porous problem
-            # Transfer the fluid pressure from fluid domain
-            # Here I would prefer to impose the flow to take into account the membrane
-            transfer_into(p_interface, pf_, boundaries,tol=1E-10)   
+            etas_n.assign(etas_)
+            us_n.assign(us_)
+            ps_n.assign(ps_)
 
 
-
-            # and normal stress from fluid  : Here it will be different with a membrane
-            # the transfer with p interface is sufficient.
-            #transfer_into(traction_interface,-dot(sigma_f(uf_ni, pf_ni), n_f),boundaries) 
-
-            # todo : I would like to add zero tangential displacement --> Nistche 
-
-            # On pourrait faire le test de deformer avec l'ALE que le domaine fluid ? 
-            etas_, us_, ps_,T0 = solve_solid(Ws, f1=Constant((0, 0)), f2=Constant(0), eta_0=etas_n, p_0=ps_n,
-                                                    bdries=solid_bdries, bcs=bcs_solid, parameters=solid_parameters, nitsche_penalty=600)
-
-
-
-            # check for convergence : before or after limitation ?
-            e=fem.norms.errornorm(etas_, etas_ni, norm_type='l2')
-
-            print('epsilon,',e)
-            if e<=1e-7*w*dt :
-            #if e<=1e-2*w*dt :
-                notconverged=False
-
-            if step>=5 :
-                notconverged=False
-
-            # Update intermediate solution
-            uf_ni.assign(uf_)
-            pf_ni.assign(pf_)            
+            #### project on the whole mesh the advection velocity and porosity
+            #porositys_=project(porositys_n+solid_parameters['alpha']*div(etas_)+solid_parameters['s0']*(ps_-ps_n),FS_porositys)
+            #porositys_=project((porositys_n+div(etas_))/(1+div(etas_)),FS_porositys)
+            porositys_=project(porositys_n,FS_porositys)
+            porositys_.set_allow_extrapolation(True)
+            porosity_=project(mask_solid*porositys_+mask_fluid*Constant(1),FS_porosity)
             
-            # limit the solid displacement
-            #etas_ni.assign(etas_)
-            etas_ni=project(Constant(w)*etas_+Constant((1-w))*etas_ni,Ws.sub(0).collapse()) 
-            us_ni.assign(us_)
-            ps_ni.assign(ps_)
 
-            step+=1
+            uf_.set_allow_extrapolation(True)
+            us_n.set_allow_extrapolation(True)
 
-        
+            #CHECK : I use us_n to be sure to have continuity at the interface. I dont know if this 'delayed' adv velocity in the solid domain is an issue.
+            advection_velocity=project(mask_solid*us_n+mask_fluid*(uf_-etaf_n/Constant(dt)),FS_advvel)
 
-        # Update current solution
-        uf_n.assign(uf_)
-        pf_n.assign(pf_)
-
-        etas_n.assign(etas_)
-        us_n.assign(us_)
-        ps_n.assign(ps_)
+            porositys_n.assign(porositys_)
 
 
-        #### project on the whole mesh the advection velocity and porosity
-        #porositys_=project(porositys_n+solid_parameters['alpha']*div(etas_)+solid_parameters['s0']*(ps_-ps_n),FS_porositys)
-        #porositys_=project((porositys_n+div(etas_))/(1+div(etas_)),FS_porositys)
-        porositys_=project(porositys_n,FS_porositys)
-        porositys_.set_allow_extrapolation(True)
-        porosity_=project(mask_solid*porositys_+mask_fluid*Constant(1),FS_porosity)
-        
 
-        uf_.set_allow_extrapolation(True)
-        us_n.set_allow_extrapolation(True)
+                
+            ### Save the data needed for the adv_diff solver into h5 files
+            ## On the last period
+            if it>(N_cycles_ini-1)*Nsteps:
+                cycletimes.append((it-(N_cycles_ini-1)*Nsteps)*dt)
+                
+                advvel_file.write(advection_velocity.vector(), "/values_{}".format(len(cycletimes)))
+                porosity_file.write(porosity_.vector(), "/values_{}".format(len(cycletimes)))
 
-        #CHECK : I use us_n to be sure to have continuity at the interface. I dont know if this 'delayed' adv velocity in the solid domain is an issue.
-        advection_velocity=project(mask_solid*us_n+mask_fluid*(uf_-etaf_n/Constant(dt)),FS_advvel)
+                # correction for last time step of the cycle
+                if it ==(N_cycles_ini)*Nsteps:
+                    # we add a little to eta_n in order to recover the initial state of the cycle
+                    eta_n=project(eta_n-sum_eta,Va_full)
+                    sum_eta=project(Constant((0,0)),Va_full)
 
-        porositys_n.assign(porositys_)
+                meshdeformation_file.write(eta_n.vector(), "/values_{}".format(len(cycletimes))) 
 
-
-        #reset sum displacement at cycles
-        if (it % Nsteps)==0:
-        #   etas_n=project(-sum_etas,Va_s)
-            sum_etas=project(Constant((0,0)),Va_s)
-            sum_eta=project(Constant((0,0)),Va_full)
-
-        if sum_eta.vector().norm('linf')>10e-4 :
-            print('max deformation : ',sum_eta.vector().norm('linf'))
-            exit()
-            
-        ### Save the data needed for the adv_diff solver into h5 files
-        ## On the last period
-        if it>(N_cycles_ini-1)*Nsteps:
-            cycletimes.append((it-(N_cycles_ini-1)*Nsteps)*dt)
-
-            advvel_file.write(advection_velocity.vector(), "/values_{}".format(len(cycletimes)))
-            porosity_file.write(porosity_.vector(), "/values_{}".format(len(cycletimes)))
-
-            # correction for last time step of the cycle
-            if it >(N_cycles_ini-1)*Nsteps + Nsteps-1:
-                # we add a little to eta_n in order to recover the initial state of the cycle
-                eta_n=project(eta_n-sum_eta,Va_full)
+            #reset sum displacement at cycles
+            if (it % Nsteps)==0:
+            #   etas_n=project(-sum_etas,Va_s)
+                sum_etas=project(Constant((0,0)),Va_s)
                 sum_eta=project(Constant((0,0)),Va_full)
 
-            meshdeformation_file.write(sum_eta.vector(), "/values_{}".format(len(cycletimes))) 
+            if sum_eta.vector().norm('linf')>10e-4 :
+                print('max deformation : ',sum_eta.vector().norm('linf'))
+                exit()
 
-        ## Save the outputs in vtk format    
-        if(timestep % int(toutput_cycle/dt) == 0):
+            ## Save the outputs in vtk format    
+            if(timestep % int(toutput_cycle/dt) == 0):
 
-            logging.info("\n*** save output time %e s"%(it*dt))
-            logging.info("number of time steps %i"%(it))
+                logging.info("\n*** save output time %e s"%(it*dt))
+                logging.info("number of time steps %i"%(it))
 
-            # may report Courant number or other important values that indicate how is doing the run
+                # may report Courant number or other important values that indicate how is doing the run
 
-            uf_n.rename("vf", "tmp")
-            pf_n.rename("pf", "tmp")
-    
-            uf_out << (uf_n, it*dt)
-            pf_out << (pf_n, it*dt)
+                uf_n.rename("vf", "tmp")
+                pf_n.rename("pf", "tmp")
+        
+                uf_out << (uf_n, it*dt)
+                pf_out << (pf_n, it*dt)
 
+                etas_n.rename("us", "tmp")
+                us_n.rename("qs", "tmp")
+                ps_n.rename("ps", "tmp")
 
-            etaf_n.rename("fluid_def", "tmp")
-            File(outputfolder+'fields'+'/fluid_def.pvd') << (etaf_n, it*dt)
+                etas_out << (etas_n, it*dt)
+                qs_out << (us_n, it*dt)
+                ps_out << (ps_n, it*dt)
 
-            etas_n.rename("us", "tmp")
-            us_n.rename("qs", "tmp")
-            ps_n.rename("ps", "tmp")
+                advection_velocity.rename("velocity", "tmp")
+                sum_eta.rename("deformation", "tmp")
 
-            etas_out << (etas_n, it*dt)
-            qs_out << (us_n, it*dt)
-            ps_out << (ps_n, it*dt)
-
-            advection_velocity.rename("adv_vel", "tmp")
-            File(outputfolder+'fields'+'/adv_vel.pvd') << (advection_velocity, it*dt)
-
-            eta_n.rename("mesh_def", "tmp")
-            File(outputfolder+'fields'+'/mesh_def.pvd') << (eta_n, it*dt)
+                advv_out<< (advection_velocity, it*dt)
+                etatot_out<< (sum_eta, it*dt)
 
 
-            # text outputs
-            #Coordinate fluid mesh
-            z, r = SpatialCoordinate(mesh_f)
-            ds = Measure('ds', domain=mesh_f, subdomain_data=fluid_bdries)
-            n = FacetNormal(mesh_f)
+                # text outputs
+                #Coordinate fluid mesh
+                z, r = SpatialCoordinate(mesh_f)
+                ds = Measure('ds', domain=mesh_f, subdomain_data=fluid_bdries)
+                n = FacetNormal(mesh_f)
 
 
-            # Get the 1 D profiles in the fluid domain
-            xy = mesh_f.coordinates().copy()          
-            x, y = xy.T  
-            xmin=min(x)
-            xmax=max(x)
-            ymin=min(y[x>0])
-            ymax=max(y[x>0])
+                # Get the 1 D profiles in the fluid domain
+                xy = mesh_f.coordinates().copy()          
+                x, y = xy.T  
+                xmin=min(x)
+                xmax=max(x)
+                ymin0=min(y[(x>(L/10))&(x<2*L/10)])
+                ymax0=max(y[(x>(L/10))&(x<2*L/10)])
+                ymin1=min(y[(x>(L/2-L/10))&(x<(L/2+L/10))])
+                ymax1=max(y[(x>(L/2-L/10))&(x<(L/2+L/10))])
+                ymin2=min(y[(x>(L-L/10))])
+                ymax2=max(y[(x>(L-L/10))])
 
-            logging.info('Rpvs : %e'%ymax)
-            logging.info('Rvn : %e'%ymin)
+                logging.info('Rpvs : %e'%ymax2)
+                logging.info('Rvn : %e'%ymin2)
 
-            files=[csv_p,csv_u]
-            fields=[pf_n,uf_n.sub(0)]
-            field_names=['pressure (dyn/cm2)','axial velocity (cm/s)']
+                files=[csv_p,csv_u]
+                fields=[pf_n,uf_n.sub(0)]
+                field_names=['pressure (dyn/cm2)','axial velocity (cm/s)']
 
-            for csv_file,field,name in zip(files,fields,field_names) :
-                #values = line_sample(slice_line, field)
-                values =profile_cyl(field,xmin,xmax,ymin,ymax)
-                logging.info('Max '+name+' : %.2e'%max(abs(values)))
-                #logging.info('Norm '+name+' : %.2e'%field.vector().norm('linf'))
-                row=[time]+list(values)
-                csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
-                csv_file.flush()
+                for csv_file,field,name in zip(files,fields,field_names) :
+                    #values = line_sample(slice_line, field)
+                    values =profile_cyl(field,xmin,xmax,ymin2,ymax2)
+                    logging.info('Max '+name+' : %.2e'%max(abs(values)))
+                    #logging.info('Norm '+name+' : %.2e'%field.vector().norm('linf'))
+                    row=[time]+list(values)
+                    csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
+                    csv_file.flush()
 
-            dx = Measure('dx', domain=mesh_f)
-            # volume of pvs
-            volume = 2*np.pi*assemble(Constant(1.0)*r*dx)
+                dx = Measure('dx', domain=mesh_f)
+                # volume of pvs
+                volume = 2*np.pi*assemble(Constant(1.0)*r*dx)
 
-            flowSAS=assemble(2*pi*r*dot(uf_, n)*ds(facet_lookup['F_left']))
-            flowInterface=assemble(2*pi*r*dot(uf_, n)*ds(facet_lookup['Interface']))
+                flowSAS=assemble(2*pi*r*dot(uf_, n)*ds(facet_lookup['F_left']))
+                flowInterface=assemble(2*pi*r*dot(uf_, n)*ds(facet_lookup['Interface']))
 
-            csv_geomflow.write('%e, %e, %e, %e, %e ,%e \n'%(time, volume,ymin,ymax, flowSAS,flowInterface))
-            csv_geomflow.flush()        
+                csv_geomflow.write('%e, %e, %e, %e,%e, %e, %e, %e, %e ,%e \n'%(time, volume,ymin0,ymax0,ymin1,ymax1,ymin2,ymax2, flowSAS,flowInterface))
+                csv_geomflow.flush()        
 
 
 
@@ -1440,10 +1462,19 @@ def PVSbrain_simulation(args):
     logging.info(title1("Advection - diffusion up to the end "))
 
 
-    #Move the mesh, normaly this should be the reference mesh (sum eta = 0)
-    ALE.move(mesh, sum_eta)
-    #is needed for the masks
-    mesh.bounding_box_tree().build(mesh)
+    # create files
+    c_out, phi_out=File(outputfolder+'fields'+'/c.pvd'),File(outputfolder+'fields'+'/phi.pvd')
+    csv_c=open(args.output_folder+'/'+args.job_name+'_concentration.txt', 'w')
+
+    porosity_n.rename("phi", "tmp")
+    phi_out << (porosity_n, 0)
+
+
+    advvel_file = HDF5File(mesh.mpi_comm(), outputfolder+"advection_velocity.h5", "r")
+    meshdeformation_file= HDF5File(mesh.mpi_comm(), outputfolder+"mesh_deformation.h5", "r")
+    porosity_file = HDF5File(mesh.mpi_comm(), outputfolder+"porosity.h5", "r")
+
+
 
     file_cumul=File(outputfolder+'fields'+'/cumul_meshdef.pvd')
     sum_eta=project(Constant((0,0)),Va_full)
@@ -1458,7 +1489,7 @@ def PVSbrain_simulation(args):
     mesh.bounding_box_tree().build(mesh) 
 
     # Gaussian in the PVS  #*(x[1]-Rpvs)/(Rv-Rpvs)
-    cf_0 = Expression('x[1]<= Rpvs ? exp(-a*pow(x[0]-b, 2)) : 0 ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss, Rv=Rv, Rpvs=Rpvs)
+    #cf_0 = Expression('x[1]<= Rpvs ? exp(-a*pow(x[0]-b, 2)) : 0 ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss, Rv=Rv, Rpvs=Rpvs)
 
     # heavyside in the axial direction
     # cf_0 = Expression('x[0]<= 150e-4 ? 1 : 0 ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss, Rv=Rv, Rpvs=Rpvs)
@@ -1472,8 +1503,8 @@ def PVSbrain_simulation(args):
     # 1 in the PVS
     #cf_0 = Expression('x[1]<= Rpvs ? 1 : 0 ', degree=2, a=1/2/sigma_gauss**2, b=xi_gauss, Rv=Rv, Rpvs=Rpvs)
 
-    # 1 every where
-    #cf_0=Constant(0)
+    # 0 every where
+    cf_0=Constant(0)
 
     c_n =  project(cf_0,Ct)#
 
@@ -1491,13 +1522,31 @@ def PVSbrain_simulation(args):
     c_n.rename("c", "tmp")
     c_out << (c_n, 0)
 
+    files=[csv_c]
+    fields=[c_n]
+    field_names=['concentration']
+
+    slice_line = line([0, (Rpvs+Rv)/2], [L, (Rpvs+Rv)/2], 100)
+
+
+    for csv_file, field in zip(files, fields):
+        # print the x scale
+        values = np.linspace(0, L, 100)
+        row = [0]+list(values)
+        csv_file.write(('%e'+', %e'*len(values)+'\n') % tuple(row))
+        # print the initial 1D slice
+        values = line_sample(slice_line, field)
+        row = [0]+list(values)
+        csv_file.write(('%e'+', %e'*len(values)+'\n') % tuple(row))
+
     # Restart time loop
     timestep=0
 
     n_cycle=-1
     timestep=0
 
-
+    cycletimes=np.arange(1,Nsteps+1)*dt
+    print(cycletimes)
 
     while n_cycle < N_cycles-1:
         n_cycle+=1
@@ -1509,12 +1558,17 @@ def PVSbrain_simulation(args):
             #get data from files
             advvel_file.read(advection_velocity.vector(), "/values_{}".format(it+1), True)
             porosity_file.read(porosity_.vector(), "/values_{}".format(it+1), True)
-            meshdeformation_file.read(sum_eta.vector(), "/values_{}".format(it+1), True)
+            meshdeformation_file.read(eta_n.vector(), "/values_{}".format(it+1), True)
 
-            print('max deformation : ',sum_eta.vector().norm('linf'))
+            print('max deformation : ',eta_n.vector().norm('linf'))
 
             timestep+=1
             print('time', current_time)
+
+            #Move the mesh, normaly this should be the reference mesh (sum eta = 0)
+            ALE.move(mesh, eta_n)
+            #is needed for the masks
+            mesh.bounding_box_tree().build(mesh)
 
 
             # Solve tracer problem
@@ -1542,7 +1596,7 @@ def PVSbrain_simulation(args):
                 c_out << (c_n, current_time)
 
                 porosity_n.rename("phi", "tmp")
-                phi_out << (porosity_n, it*dt)
+                phi_out << (porosity_n, current_time)
 
                 sum_eta.rename("cumul_mesh_def", "tmp")
                 file_cumul << (sum_eta, current_time)
@@ -1552,11 +1606,12 @@ def PVSbrain_simulation(args):
                 field_names=['concentration']
 
                 for csv_file,field,name in zip(files,fields,field_names) :
-                    #values = line_sample(slice_line, field)
-                    values =profile_cyl(field,xmin,xmax,ymin,ymax)
+                    ymean=functionR.subs(tn,current_time)+(Rpvs-Rv)/2
+                    horizontal_line=line([0,ymean],[L,ymean], 100)
+                    values=line_sample(slice_line, field)
                     logging.info('Max '+name+' : %.2e'%max(abs(values)))
                     #logging.info('Norm '+name+' : %.2e'%field.vector().norm('linf'))
-                    row=[time]+list(values)
+                    row=[current_time]+list(values)
                     csv_file.write(('%e'+', %e'*len(values)+'\n')%tuple(row))
                     csv_file.flush()
 
@@ -1727,7 +1782,7 @@ if __name__ == '__main__':
 
     my_parser.add_argument('-tau','--biot_tortuosity',
                         type=float,
-                        default=0.5,
+                        default=0.34,
                         help='Tortuosity in the Biot domain')
 
     my_parser.add_argument('-phi','--biot_porosity',
@@ -1757,12 +1812,12 @@ if __name__ == '__main__':
 
     my_parser.add_argument('-taumem','--biot_tortuosity_membrane',
                         type=float,
-                        default=1,
+                        default=0.0,
                         help='Tortuosity in the porous membrane')
     
     my_parser.add_argument('-phimem','--biot_porosity_membrane',
                         type=float,
-                        default=0.01,
+                        default=0.2,
                         help='Porosity in the membrane')     
 
     my_parser.add_argument('-mesh','--mesh_method',
@@ -1781,4 +1836,6 @@ if __name__ == '__main__':
     PVSbrain_simulation(args)
 
 
-# python3 PVSBrain_simulation.py -j robusttest -dt 1e-3 -toutput 1e-3 -toutputcycle 1e-3 -E 10e4
+# python3 PVSBrainMembrane_nitsche.py -lpvs 0.06 -tend 10 -toutput 0.1 -toutputcycle 0.1 -dt 0.1 -rbrain 0.01 -nrpvs 6 -nrmem 4 -mesh regular -nl 100 -d 1.68e-07 -perm 1e-13 -permmem 1e-15 -E 100000.0 -Emem 100000.0 -hmem 0.0001 -j PVSBrain-l6e-02-hmem2e-04-E10-K1e-14-stageNREM-VLF -ai 0.040624219584391115  -fi 0.2067546261123808  -rv 0.00060 -rpvs 0.00090
+
+#python3 PVSBrainMembrane_nitsche.py -lpvs 0.06 -tend 10 -toutput 0.1 -toutputcycle 0.1 -dt 0.1 -rbrain 0.01 -nrpvs 8 -nrmem 8 -mesh regular -nl 400 -d 1.68e-07 -perm 1e-13 -permmem 1e-15 -E 100000.0 -Emem 100000.0 -hmem 0.0001 -j PVSBrain-video -ai 0.08  -fi 0.2  -rv 0.00060 -rpvs 0.00090

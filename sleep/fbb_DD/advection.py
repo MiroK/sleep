@@ -78,7 +78,7 @@ def solve_adv_diff_cyl(W, velocity,phi, f, c_0, phi_0, bdries, bcs, parameters):
     #(inner((phi - phi_0)/dt, psi)*r*dx 
     # (inner(phi*c/dt, psi)*r*dx - inner(phi_0*c_0/dt, psi0)*r*dx
     # Usual backward Euler
-    system =(inner(phi*c/dt, psi)*r*dx - inner(phi_0*c_0/dt, psi)*r*dx + dot(velocity, cyl.GradAxisym(c))*psi*r*dx +
+    system =(inner(phi*c/dt, psi)*r*dx - inner(phi*c_0/dt, psi)*r*dx + dot(velocity, cyl.GradAxisym(c))*psi*r*dx +
               inner(kappa*phi*cyl.GradAxisym(c), cyl.GradAxisym(psi))*r*dx - inner(f, psi)*r*dx)
     
     # SUPG stabilization
@@ -193,7 +193,7 @@ def solve_adv_diff(W, velocity,phi, f, c_0, phi_0, bdries, bcs, parameters):
 
     # Usual backward Euler
     system = (inner(phi*c/dt, psi)*dx - inner(phi_0*c_0/dt, psi)*dx+ dot(velocity, grad(c))*psi*dx +
-              kappa*phi*inner(grad(c), grad(psi))*dx - inner(f, psi)*dx)
+              inner(kappa*phi*grad(c), grad(psi))*dx - inner(f, psi)*dx)
     
     # SUPG stabilization
     if parameters.get('supg', False):
