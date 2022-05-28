@@ -384,17 +384,18 @@ def PVS_simulation(args):
         tn = sympy.symbols("tn")
         tnp1 = sympy.symbols("tnp1")
         sin = sympy.sin
+        cos = sympy.cos
         sqrt = sympy.sqrt
 
         # if a is the change of thickness
-        functionR = Rpvs - (Rpvs-Rv)*(1+sum([a*sin(2*pi*f*tn+phi)
-                                             for a, f, phi in zip(ai, fi, phii)]))  # displacement
-        functionUALE = -(Rpvs-Rv)*(1+sum([a*sin(2*pi*f*tnp1+phi) for a, f, phi in zip(ai, fi, phii)]))+(
-            Rpvs-Rv)*(1+sum([a*sin(2*pi*f*tn+phi) for a, f, phi in zip(ai, fi, phii)]))                                     
+        #functionR = Rpvs - (Rpvs-Rv)*(1+sum([a*sin(2*pi*f*tn+phi)
+        #                                     for a, f, phi in zip(ai, fi, phii)]))  # displacement
+        #functionUALE = -(Rpvs-Rv)*(1+sum([a*sin(2*pi*f*tnp1+phi) for a, f, phi in zip(ai, fi, phii)]))+(
+        #    Rpvs-Rv)*(1+sum([a*sin(2*pi*f*tn+phi) for a, f, phi in zip(ai, fi, phii)]))                                     
 
         # if a is the change of area
-        functionR = sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))) # displacement
-        functionUALE=sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*sin(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)])))- sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*sin(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))) 
+        functionR = sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*cos(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))) # displacement
+        functionUALE=sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*cos(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)])))- sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*cos(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))) 
         
 
         functionV = sympy.diff(functionR, tn)  # velocity
@@ -1304,3 +1305,18 @@ if __name__ == '__main__':
 
 # python3 PVS_cyclessimulation.py -lpvs 0.02 -c0init uniform -c0valueSAS 50 -c0valuePVS 0 -sasbc scenarioE -tend 400 -toutput 1 -dt 0.01 -r -1 -nr 4 -nl 100 -d 2e-07 -refineleft True  -j sleep_intake -cycle normalsleep -SAS True
 # python3 PVS_cyclessimulation.py -lpvs 0.02 -c0init uniform -c0valueSAS 50 -c0valuePVS 0 -sasbc scenarioE -tend 400 -toutput 1 -dt 0.01 -r -1 -nr 4 -nl 100 -d 2e-07 -refineleft True  -j awake_intake -cycle awake -SAS True
+
+
+# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.11720094253454381 -dt 0.003662529454204494 -r -1 -nr 6 -nl 600 -d 1.68e-07 -s 0.0001 -j intake-d2e-07-l6e-02-baseline -ai 0.0  -fi 0.1  -rv 0.0005771409125084831 -rpvs 0.0008571719617706034
+# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.11720094253454381 -dt 0.003662529454204494 -r -1 -nr 6 -nl 600 -d 1.68e-07 -s 0.0001 -j intake-d2e-07-l6e-02-baseline-LF -ai 0.010882310409788867  -fi 0.5332721618819639  -rv 0.0005771409125084831 -rpvs 0.0008571719617706034
+# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.1319294501872422 -dt 0.004122795318351319 -r -1 -nr 6 -nl 600 -d 1.68e-07 -s 0.0001 -j intake-d2e-07-l6e-02-baseline-VLF -ai 0.01807978819244458  -fi 0.23686902322148787  -rv 0.0005771409125084831 -rpvs 0.0008571719617706034
+# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.11720094253454381 -dt 0.003662529454204494 -r -1 -nr 6 -nl 600 -d 1.68e-07 -s 0.0001 -j intake-d2e-07-l6e-02-baseline-VLFLF -ai 0.01807978819244458 0.010882310409788867  -fi 0.23686902322148787 0.5332721618819639  -rv 0.0005771409125084831 -rpvs 0.0008571719617706034
+
+# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.1483434180540058 -dt 0.004635731814187681 -r -1 -nr 6 -nl 600 -d 1.68e-07 -s 0.0001 -j intake-d2e-07-l6e-02-stageNREM-VLF -ai 0.029500160082592375  -fi 0.21065983519823675  -rv 0.0005942645684061443 -rpvs 0.0008716330311360221
+# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.12570651571891367 -dt 0.003928328616216052 -r -1 -nr 6 -nl 600 -d 1.68e-07 -s 0.0001 -j intake-d2e-07-l6e-02-stageNREM-LF -ai 0.018064046048171124  -fi 0.49718982061163214  -rv 0.0005942645684061443 -rpvs 0.0008716330311360221
+# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.125706515718913678 -dt 0.003928328616216052 -r -1 -nr 6 -nl 600 -d 1.68e-07 -s 0.0001 -j intake-d2e-07-l6e-02-stageNREM-VLFLF -ai 0.029500160082592375 0.018064046048171124  -fi 0.21065983519823675 0.49718982061163214  -rv 0.0005942645684061443 -rpvs 0.0008716330311360221
+
+
+# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.14738356102969752 -dt 0.0046057362821780475 -r -1 -nr 6 -nl 600 -d 1.68e-07  -j intake-d2e-07-l6e-02-stageNREM-VLF-id48-6-1 -ai 0.030931344481521333  -fi 0.21203178822435415  -rv 0.0005785529361288647 -rpvs 0.0012499888181737389
+# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.14738356102969752 -dt 0.0046057362821780475 -r -1 -nr 6 -nl 600 -d 1.68e-07  -j intake-d2e-07-l6e-02-stageNREM-LF-id48-6-1 -ai 0.012812726766516033  -fi 0.5092662676310167  -rv 0.0005785529361288647 -rpvs 0.0012499888181737389
+# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.14738356102969752 -dt 0.0046057362821780475 -r -1 -nr 6 -nl 600 -d 1.68e-07  -j intake-d2e-07-l6e-02-stageNREM-VLFLF-id48-6-1 -ai 0.030931344481521333 0.012812726766516033  -fi 0.21203178822435415 0.5092662676310167  -rv 0.0005785529361288647 -rpvs 0.0012499888181737389
