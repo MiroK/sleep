@@ -107,6 +107,8 @@ def solve_solid(W, f1, f2, eta_0, p_0, bdries, bcs, parameters, nitsche_penalty)
               
     # Darcy
     a += (1/kappa)*inner(u, v)*dx - inner(p, div(v))*dx
+    # Kappa = as_matrix(((kx, 0), (0, ky)))
+    # inner(v, dot(Kappa,u))*dx
          
     # Mass conservation with backward Euler
     a += inner(s0*p, q)*dx + inner(alpha*div(eta), q)*dx + dt*inner(div(u), q)*dx
