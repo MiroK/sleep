@@ -394,8 +394,8 @@ def PVS_simulation(args):
         #    Rpvs-Rv)*(1+sum([a*sin(2*pi*f*tn+phi) for a, f, phi in zip(ai, fi, phii)]))                                     
 
         # if a is the change of area
-        functionR = sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*cos(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))) # displacement
-        functionUALE=sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*cos(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)])))- sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1+sum([a*cos(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))) 
+        functionR = sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1-sum([a*cos(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))) # displacement
+        functionUALE=sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1-sum([a*cos(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)])))- sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1-sum([a*cos(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))) 
         
 
         functionV = sympy.diff(functionR, tn)  # velocity
@@ -1320,3 +1320,17 @@ if __name__ == '__main__':
 # python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.14738356102969752 -dt 0.0046057362821780475 -r -1 -nr 6 -nl 600 -d 1.68e-07  -j intake-d2e-07-l6e-02-stageNREM-VLF-id48-6-1 -ai 0.030931344481521333  -fi 0.21203178822435415  -rv 0.0005785529361288647 -rpvs 0.0012499888181737389
 # python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.14738356102969752 -dt 0.0046057362821780475 -r -1 -nr 6 -nl 600 -d 1.68e-07  -j intake-d2e-07-l6e-02-stageNREM-LF-id48-6-1 -ai 0.012812726766516033  -fi 0.5092662676310167  -rv 0.0005785529361288647 -rpvs 0.0012499888181737389
 # python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.14738356102969752 -dt 0.0046057362821780475 -r -1 -nr 6 -nl 600 -d 1.68e-07  -j intake-d2e-07-l6e-02-stageNREM-VLFLF-id48-6-1 -ai 0.030931344481521333 0.012812726766516033  -fi 0.21203178822435415 0.5092662676310167  -rv 0.0005785529361288647 -rpvs 0.0012499888181737389
+
+
+# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init gaussian -c0valueSAS 0 -c0valuePVS 1 -sasbc scenarioA -tend 40 -toutput 0.20424737359238251 -dt 0.0031913652123809768 -r -1 -nr 8 -nl 600 -d 1.68e-07 -s 0.0002 -xi 0.03 -j diffusion-valid -ai 0  -fi 9.792047578498659  -rv 0.00042507948448012467 -rpvs 0.0012641418350997833
+
+# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init gaussian -c0valueSAS 0 -c0valuePVS 1 -sasbc scenarioA -tend 40 -toutput 0.20424737359238251 -dt 0.0031913652123809768 -r -1 -nr 8 -nl 600 -d 1.68e-07 -s 0.0002 -xi 0.03 -j dispersion-card -ai 0.0027089149267303936  -fi 9.792047578498659  -rv 0.00042507948448012467 -rpvs 0.0012641418350997833
+
+# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init gaussian -c0valueSAS 0 -c0valuePVS 1 -sasbc scenarioA -tend 10 -toutput 0.20424737359238251 -dt 0.005 -r -1 -nr 8 -nl 600 -d 1.68e-07 -s 0.0001 -xi 0.03 -j dispersion-card -ai 0.0027089149267303936  -fi 9.792047578498659  -rv 0.00042507948448012467 -rpvs 0.0012641418350997833
+
+
+### test erf
+
+# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init constant -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.20424737359238251 -dt 0.0031913652123809768 -r -1 -nr 8 -nl 600 -d 1.68e-07  -j diffusion-erfc -ai 0  -fi 9.792047578498659  -rv 0.00042507948448012467 -rpvs 0.0012641418350997833
+
+# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init constant -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.20424737359238251 -dt 0.0031913652123809768 -r -1 -nr 8 -nl 600 -d 1.68e-07  -j dispersion-erfc-card -ai 0.0027089149267303936  -fi 9.792047578498659  -rv 0.00042507948448012467 -rpvs 0.0012641418350997833
