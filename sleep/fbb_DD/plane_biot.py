@@ -1,4 +1,5 @@
 import dolfin as df
+import numpy as np
 
 
 def pcws_constant(cell_f, cases):
@@ -7,21 +8,33 @@ def pcws_constant(cell_f, cases):
     '''
     mesh = cell_f.mesh()
     assert mesh.topology().dim() == cell_f.dim()
-
+    # Check sanity of values; here we always assme that the value is
+    # something that UFL can understand
+    value_shape, = set(value.ufl_shape for value in cases.values())
+    # We have values for all tags
+    my_tags = tuple(np.unique(cell_f.array()))
+    all_tags = mesh.mpi_comm().allreduce(my_tags)
+    assert set(all_tags) == cases.keys()
+    
     # Now we set ourselves up for P0 projection
-    V = df.FunctionSpace(mesh, 'DG', 0)
+    V = {0: df.FunctionSpace,
+         1: df.VectorFunctionSpace,
+         2: df.TensorFunctionSpace}[len(value_shape)](mesh, 'DG', 0)
+        
     v = df.TestFunction(V)
     f = df.Function(V)
 
     hK = df.CellVolume(mesh)
     dx = df.Measure('dx', domain=mesh, subdomain_data=cell_f)
 
-    form = sum((1/hK)*df.inner(v, df.Constant(val))*dx(tag)
+    form = sum((1/hK)*df.inner(v, val)*dx(tag)
                for tag, val in cases.items())
 
     df.assemble(form, tensor=f.vector())
 
     return f
+
+
 
 # --------------------------------------------------------------------
 
@@ -56,7 +69,7 @@ if __name__ == '__main__':
                   'alpha': {1: Constant(1), 5: Constant(4)},
                   's0': {1: Constant(1), 5: Constant(0.2)}}
     # Turn it into functions
-    parameters = {key: pcws_constant(subdomains, val) for key, val in parameters.items()}
+    parameters = {key: pcws_constant(subdomains, Constant(val)) for key, val in parameters.items()}
 
     # Just for visual check
     [File(f'{key}.pvd') << val for key, val in parameters.items()]

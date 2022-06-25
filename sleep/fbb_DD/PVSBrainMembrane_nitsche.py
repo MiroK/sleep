@@ -14,6 +14,7 @@ from sleep.fbb_DD.fluid import solve_fluid_cyl as solve_fluid
 #todo : cylindrical for solid
 from sleep.fbb_DD.biot_nitsche import solve_solid
 from sleep.fbb_DD.ale import solve_ale as solve_ale
+from sleep.fbb_DD.plane_biot import pcws_constant
 from sleep.utils import EmbeddedMesh
 from sleep.mesh import load_mesh2d
 from dolfin import *
@@ -38,29 +39,6 @@ def profile_cyl(f,xmin,xmax,ymin,ymax,Nx=100,Ny=10):
     values=[slice_integrate_cyl(x,f,ymin,ymax,N=Ny) for x in spanx]
     return np.array(values)
 
-
-
-def pcws_constant(cell_f, cases):
-    '''Piecewise constant function f
-    if x in cell_f[tag] then return cases[tag]
-    '''
-    mesh = cell_f.mesh()
-    assert mesh.topology().dim() == cell_f.dim()
-
-    # Now we set ourselves up for P0 projection
-    V = FunctionSpace(mesh, 'DG', 0)
-    v = TestFunction(V)
-    f = Function(V)
-
-    hK = CellVolume(mesh)
-    dx = Measure('dx', domain=mesh, subdomain_data=cell_f)
-
-    form = sum((1/hK)*inner(v, Constant(val))*dx(tag)
-               for tag, val in cases.items())
-
-    assemble(form, tensor=f.vector())
-
-    return f
 
 # Define line function for 1D slice evaluation
 def line_sample(line, f, fill=np.nan):
@@ -719,7 +697,7 @@ def PVSbrain_simulation(args):
 
     # Turn it into functions
 
-    solid_parameters = {key: pcws_constant(materials, val) for key, val in solid_parameters.items()}
+    solid_parameters = {key: pcws_constant(materials, Constant(val)) for key, val in solid_parameters.items()}
 
     # add the parameters valid in every domains
     # Pick system solver
