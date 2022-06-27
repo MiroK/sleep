@@ -306,6 +306,11 @@ def PVSbrain_simulation(args):
     porosity_0mem=args.biot_porosity_membrane
     tortuositymem=args.biot_tortuosity_membrane
 
+    # parameter to scale the anisotropy of the membrane (permeability and diffusion tensor)
+    # 0 : isotrope
+    # 1 : fully anisotrope (fx << fy)
+    anisotropymem=args.biot_anisotropy_membrane
+
     Gmem=Emem/(2*(1+poissonmem))
     lmbdamem=E*poissonmem/(1+poissonmem)/(1-2*poissonmem)
 
@@ -349,20 +354,7 @@ def PVSbrain_simulation(args):
 
 
 
-    # Let's define piecewise constant data based on the subdomains of the solid domain
-    
 
-   
-    solid_parameters = {'kappa': {0: Constant(conductivitymem), 1: Constant(conductivity)},
-                  'mu': {0: Constant(Gmem), 1: Constant(G)},
-                  'lmbda': {0: Constant(lmbdamem), 1: Constant(lmbda)},
-                  'alpha': {0: Constant(alphamem), 1: Constant(alpha)},
-                  's0': {0: Constant(s0mem), 1: Constant(s0)}}
-
-
-
-    # Just for visual check
-    #[File(f'{key}.pvd') << val for key, val in solid_parameters.items()]
     
 
 
@@ -695,9 +687,24 @@ def PVSbrain_simulation(args):
 
     #domain specific parameters for solid 
 
+    # Let's define piecewise constant data based on the subdomains of the solid domain
+
+    condtensormem=((conductivitymem*max((1-anisotropymem),1e-12),0),(0,conductivitymem))
+    condtensor=((conductivity,0),(0,conductivity))
+
+    solid_parameters = {'kappa': {0: Constant(condtensormem), 1: Constant(condtensor)},
+                  'mu': {0: Constant(Gmem), 1: Constant(G)},
+                  'lmbda': {0: Constant(lmbdamem), 1: Constant(lmbda)},
+                  'alpha': {0: Constant(alphamem), 1: Constant(alpha)},
+                  's0': {0: Constant(s0mem), 1: Constant(s0)}}
+
+    # Just for visual check
+    #[File(f'{key}.pvd') << val for key, val in solid_parameters.items()]
+
+
     # Turn it into functions
 
-    solid_parameters = {key: pcws_constant(materials, Constant(val)) for key, val in solid_parameters.items()}
+    solid_parameters = {key: pcws_constant(materials, val) for key, val in solid_parameters.items()}
 
     # add the parameters valid in every domains
     # Pick system solver
@@ -1770,8 +1777,13 @@ if __name__ == '__main__':
 
     my_parser.add_argument('-permmem','--biot_permeability_membrane',
                         type=float,
-                        default=1e-13,
+                        default=1e-10,
                         help='Permeability in the membrane (cm2)')
+
+    my_parser.add_argument('-amem','--biot_anisotropy_membrane',
+                        type=float,
+                        default=0,
+                        help='Anisotropy of the membrane : 0 : isotropic, 1 : fully anisotropic (fx << fy)')
 
     my_parser.add_argument('-Emem','--biot_youngmodulus_membrane',
                         type=float,
