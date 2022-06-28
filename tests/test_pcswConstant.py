@@ -50,6 +50,11 @@ def test_tensor():
     L = df.inner(f-foo, f-foo)*dx(0) + df.inner(f-bar, f-bar)*dx(1)
     e = df.assemble(L)
 
+    # Axisym?
+    df.as_matrix(((foo[0, 0], foo[0, 1], df.Constant(0)),
+                  (foo[1, 0], foo[1, 1], df.Constant(0)),
+                  (df.Constant(0), df.Constant(0), df.Constant(1))))
+
     assert df.sqrt(abs(e)) < 1E-14
 
 
