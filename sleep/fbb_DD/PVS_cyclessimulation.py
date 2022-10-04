@@ -446,12 +446,14 @@ def PVS_simulation(args):
         gmsh.finalize()
 
     else:
+        Rv = Rvfunction(0)
+        Rpvs = Rpvsfunction(0)
         # simple PVS mesh
         logging.info('cell size : %e cm' % (np.sqrt(DR**2+DY**2)))
         logging.info('nb cells: %i' % (Nl*Nr*2))
 
-        mesh_f = RectangleMesh(Point(0, Rvfunction(0)),
-                               Point(L, Rpvsfunction(0)), Nl, Nr)
+        mesh_f = RectangleMesh(Point(0, Rv),
+                               Point(L, Rpvs), Nl, Nr)
 
         # Refinement at the SAS boundary
         if args.refineleft:
