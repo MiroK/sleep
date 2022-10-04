@@ -245,7 +245,7 @@ def PVS_simulation(args):
     logging.info('fi (Hz) : '+'%e '*len(fi) % tuple(fi))
     logging.info('phii (rad) : '+'%e '*len(phii) % tuple(phii))
 
-    if aSMC >= max(ai) :
+    if aSMC >= (1-max(ai)) :
         logging.info('The area of SMC is larger than the deformation. Please chose a smaller value.')
         logging.info('We change the SMC area to be half of free space after deformation.')
         aSMC=(1-max(ai))/2
