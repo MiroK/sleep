@@ -9,26 +9,15 @@ from ssl import ALERT_DESCRIPTION_UNRECOGNIZED_NAME
 import numpy as np
 from math import pi
 
-from sleep.stages.cycles import State, Cycle
-from sleep.fbb_DD.advection import solve_adv_diff_cyl as solve_adv_diff
-from sleep.fbb_DD.fluid import solve_fluid_cyl as solve_fluid
-from sleep.fbb_DD.ale import solve_ale_cyl as solve_ale
-from sleep.utils import EmbeddedMesh
+from src.fem.advection import solve_adv_diff_cyl as solve_adv_diff
+from src.fem.fluid import solve_fluid_cyl as solve_fluid
+from src.fem.utils import EmbeddedMesh
+
 #from sleep.mesh import load_mesh2d
 from dolfin import *
-import sleep.fbb_DD.cylindrical as cyl
 
-from sleep.stages.readConfig import ReadCycle
+import src.fem.cylindrical as cyl
 
-
-# What are the conditions for time step ?
-# All implicit so the only worry is numerical diffusion.
-# todo : add dt and n steps management
-
-
-# for the resistance BC : It does not work fo high resistance (ex R=1e11), we cannot tend to zero flow case.
-# Should we iterate ?
-# Need to analyse for time step convergence.
 
 
 # Define line function for 1D slice evaluation
@@ -173,11 +162,15 @@ def PVS_simulation(args):
     logging.info('\n * Geometry')
     Rv = args.radius_vessel  # centimeters
     Rpvs = args.radius_pvs  # centimeters
+    aSMC=args.alpha_SMC # ratio
     L = args.length  # centimeters
+
+    
 
     logging.info('Vessel radius : %e cm' % Rv)
     logging.info('PVS radius : %e cm' % Rpvs)
     logging.info('PVS length : %e cm' % L)
+    logging.info('SMC initial area coverage : %e pc' % aSMC)
 
     # test presence of the SAS compartment on the mesh
     isSAS = args.issas
@@ -244,9 +237,19 @@ def PVS_simulation(args):
     xi_gauss = args.initial_pos
     logging.info('Initial position: %e cm2' % xi_gauss)
 
-    logging.info('\n * ALE')
-    kappa = args.ale_parameter
-    logging.info('ALE parameter: %e ' % kappa)
+    # oscillation parameters
+    ai = args.ai
+    fi = args.fi
+    phii = args.phii
+    logging.info('ai (dimensionless): '+'%e '*len(ai) % tuple(ai))
+    logging.info('fi (Hz) : '+'%e '*len(fi) % tuple(fi))
+    logging.info('phii (rad) : '+'%e '*len(phii) % tuple(phii))
+
+    if aSMC >= max(ai) :
+        logging.info('The area of SMC is larger than the deformation. Please chose a smaller value.')
+        logging.info('We change the SMC area to be half of free space after deformation.')
+        aSMC=(1-max(ai))/2
+        logging.info('new SMC initial area coverage : %e pc' % aSMC)
 
     logging.info('\n * Lateral BC')
     resistance = args.resistance
@@ -263,157 +266,42 @@ def PVS_simulation(args):
 
     fluid_parameters = {'mu': mu, 'rho': rho, 'dt': dt_fluid}
     tracer_parameters = {'kappa': D, 'dt': dt_advdiff}
-    ale_parameters = {'kappa': kappa}
+
 
     # Setup of boundary conditions
     logging.info(title1("Boundary conditions"))
 
     logging.info('\n * Cross section area parameters')
 
-    if args.cycle:
-        logging.info('frequency and amplitude data from cycle '+args.cycle)
-        timedependentfa = True
-    else:
-        timedependentfa = False
-        ai = args.ai
-        fi = args.fi
-        phii = args.phii
-        logging.info('ai (dimensionless): '+'%e '*len(ai) % tuple(ai))
-        logging.info('fi (Hz) : '+'%e '*len(fi) % tuple(fi))
-        logging.info('phii (rad) : '+'%e '*len(phii) % tuple(phii))
+    import sympy
+    tn = sympy.symbols("tn")
+    tnp1 = sympy.symbols("tnp1")
+    sin = sympy.sin
+    cos = sympy.cos
+    sqrt = sympy.sqrt
+                                  
 
-    if timedependentfa:
-
-        ##
-        logging.info('creation of cycle')
-
-        cycleObj = ReadCycle('../stages/cycles.yml', args.cycle)
-        totalcycletime = np.sum(cycleObj.durations)
-        spantime, listspana, listspanf, spanRv, spanh0, spanRpvs = cycleObj.generatedata(
-            int(tfinal/totalcycletime)+1)
-
-        logging.info('*** Simulation of %s cycle ' % cycleObj.name)
-
-        # adjust last time in order to be able to interpolate
-        # spantime[-1]=max(tfinal+2*dt,spantime[-1])
-
-        from scipy.interpolate import interp1d
-        varflist = {}
-        varalist = {}
-
-        for freq in listspanf:
-            varflist[freq] = interp1d(spantime, listspanf[freq])
-            varalist[freq] = interp1d(spantime, listspana[freq])
-
-        varh0 = interp1d(spantime, spanh0)
-        varRpvs = interp1d(spantime, spanRpvs)
-
-        # varda=interp1d(spantime,dadt,kind="previous")
-
-        fs = 1/dt  # test if same result if multiplying by 10 ?
-
-        # longer than the simulation time because we need tn+1 for the U ALE computation
-        time = 0 + np.arange(int((tfinal+2*dt)*fs))/fs
-
-        modulation = {}
-        for freq in listspanf:
-            modulation[freq] = varalist[freq](
-                time)*np.sin(2*np.pi*np.cumsum(varflist[freq](time))/fs)
-
-        OuterRadius = varRpvs(time)
-        InnerRadius = varRpvs(time) - varh0(time)*(
-            1+modulation['cardiac']+modulation['resp']+modulation['LF']+modulation['VLF'])
-
-        # define the thickness interpolation function
-        interph0 = interp1d(time, varh0(
-            time)*(1+modulation['cardiac']+modulation['resp']+modulation['LF']+modulation['VLF']))
-
-        # More easy here to take the numerical derivative of the radius
-        ##dadt= np.array(list(np.diff(vara(time))/np.diff(time))+[0.0])
-        ##dRadiusdt= -(Rpvs-Rv)*(dadt*np.sin(2*np.pi*np.cumsum(varf(time))/fs)+vara(time)*np.cos((2*np.pi*np.cumsum(varf(time))/fs))*(2*np.pi*varf(time)))
-        douterRadiusdt = np.array(
-            list(np.diff(OuterRadius)/np.diff(time))+[0.0])
-        dinnerRadiusdt = np.array(
-            list(np.diff(InnerRadius)/np.diff(time))+[0.0])
-
-        # define an expression for the radius and the derivative
-
-        class Interp(UserExpression):
-            def __init__(self, x, y, **kwargs):
-                super().__init__(self, **kwargs)
-                self.interp = interp1d(x, y)
-                self.tn = 0
-
-            def eval(self, values, x):
-                values[0] = 0
-                values[1] = self.interp(self.tn)
-
-            def value_shape(self):
-                return (2,)
-
-        class Interpdiff(UserExpression):
-            def __init__(self, x, y, **kwargs):
-                super().__init__(self, **kwargs)
-                self.interp = interp1d(x, y)
-                self.tn = 0
-                self.tnp1 = dt
-
-            def eval(self, values, x):
-                values[0] = 0
-                values[1] = self.interp(self.tnp1)-self.interp(self.tn)
-
-            def value_shape(self):
-                return (2,)
-
-        interpRpvs = Interp(time, OuterRadius, degree=1)
-        interpRv = Interp(time, InnerRadius, degree=1)
-
-        # initial values for Rv and Rpvs
-        uale_top = Interpdiff(time, OuterRadius, degree=1)
-        uale_bottom = Interpdiff(time, InnerRadius, degree=1)
-        vf_top = Interp(time, douterRadiusdt, degree=1)
-        vf_bottom = Interp(time, dinnerRadiusdt, degree=1)
-
-        Rvfunction = interp1d(time, InnerRadius)
-        Rpvsfunction = interp1d(time, OuterRadius)
-        dRvdtfunction = interp1d(time, dinnerRadiusdt)
-
-    else:
-
-        import sympy
-        tn = sympy.symbols("tn")
-        tnp1 = sympy.symbols("tnp1")
-        sin = sympy.sin
-        cos = sympy.cos
-        sqrt = sympy.sqrt
-
-        # if a is the change of thickness
-        #functionR = Rpvs - (Rpvs-Rv)*(1+sum([a*sin(2*pi*f*tn+phi)
-        #                                     for a, f, phi in zip(ai, fi, phii)]))  # displacement
-        #functionUALE = -(Rpvs-Rv)*(1+sum([a*sin(2*pi*f*tnp1+phi) for a, f, phi in zip(ai, fi, phii)]))+(
-        #    Rpvs-Rv)*(1+sum([a*sin(2*pi*f*tn+phi) for a, f, phi in zip(ai, fi, phii)]))                                     
-
-        # if a is the change of area
-        functionR = sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1-sum([a*cos(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))) # displacement
-        functionUALE=sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1-sum([a*cos(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)])))- sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1-sum([a*cos(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))) 
+    # ai is the change of area
+    functionR = sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1-sum([a*cos(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))+aSMC*(Rpvs**2-Rv**2)) # displacement
+    functionUALE=sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1-sum([a*cos(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)]))+aSMC*(Rpvs**2-Rv**2))- sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1-sum([a*cos(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))+aSMC*(Rpvs**2-Rv**2)) 
         
 
-        functionV = sympy.diff(functionR, tn)  # velocity
-        V_vessel = sympy.printing.ccode(functionV)
+    functionV = sympy.diff(functionR, tn)  # velocity
+    V_vessel = sympy.printing.ccode(functionV)
 
-        UALE_vessel = sympy.printing.ccode(functionUALE)
+    UALE_vessel = sympy.printing.ccode(functionUALE)
 
-        # no slip no gap condition at vessel wall
-        vf_bottom = Expression(('0', V_vessel), tn=0, degree=2)
-        # displacement for ALE at vessel wall
-        uale_bottom = Expression(('0', UALE_vessel), tn=0, tnp1=1, degree=2)
+    # no slip no gap condition at vessel wall
+    vf_bottom = Expression(('0', V_vessel), tn=0, degree=2)
+    # displacement for ALE at vessel wall
+    uale_bottom = Expression(('0', UALE_vessel), tn=0, tnp1=1, degree=2)
 
-        vf_top = Constant((0, 0))
-        uale_top = Constant((0, 0))
+    vf_top = Constant((0, 0))
+    uale_top = Constant((0, 0))
 
-        def Rvfunction(t): return functionR.subs(tn, t).evalf()
-        def Rpvsfunction(t): return Rpvs
-        def dRvdtfunction(t): return functionV.subs(tn, t).evalf()
+    def Rvfunction(t): return functionR.subs(tn, t).evalf()
+    def Rpvsfunction(t): return Rpvs
+    def dRvdtfunction(t): return functionV.subs(tn, t).evalf()
 
     if isSAS:
         import sympy
@@ -737,11 +625,7 @@ def PVS_simulation(args):
         bcs_tracer_out['flux'].append(
             (facet_lookup['sas_tissue'], Constant(0)))
 
-    # BC for ALE (not used anymore)
-    bcs_ale = {'dirichlet': [(facet_lookup['vessel'], uale_bottom),
-                             (facet_lookup['pvs_tissue'], uale_top)],
-               'neumann': [(facet_lookup['sas_out'], Constant((0, 0))),
-                           (facet_lookup['pvs_end'], Constant((0, 0)))]}
+
 
     # We collect the time dependent BC for update
     driving_expressions = [uale_bottom, vf_bottom, uale_top, vf_top]
@@ -938,10 +822,7 @@ def PVS_simulation(args):
 
             setattr(Rpressure, 'Q', Flow)
 
-        # Solve ALE and move mesh
-        #eta_f = solve_ale(Va, f=Constant((0, 0)), bdries=fluid_bdries, bcs=bcs_ale, parameters=ale_parameters)
-
-        # Or just compute the deformation
+        # compute the deformation of the mesh
         xy = mesh_f.coordinates()
         x, y = xy.T
 
@@ -1143,6 +1024,12 @@ if __name__ == '__main__':
                            default=10e-4,
                            help='PVS outer radius as rest')
 
+    my_parser.add_argument('-aSMC', '--alpha_SMC',
+                           metavar='aSMC',
+                           type=float,
+                           default=0,
+                           help='pourcentage of the initial area occupied by smooth muscle cells (to be removed from the fluid domain)')                           
+
     my_parser.add_argument('-lpvs', '--length',
                            type=float,
                            default=100e-4,
@@ -1196,10 +1083,6 @@ if __name__ == '__main__':
                            default=0,
                            help='Resistance at the inner side of the brain')
 
-    my_parser.add_argument('-k', '--ale_parameter',
-                           type=float,
-                           default=1,
-                           help='ALE parameter')
 
     my_parser.add_argument('-nr', '--N_radial',
                            type=int,
@@ -1246,10 +1129,6 @@ if __name__ == '__main__':
                            default=1,
                            help='Initial value of the concentration in the PVS')
 
-    my_parser.add_argument('-cycle',
-                           type=str,
-                           default='',
-                           help='Cycle name, must be defined in the cycles.yml config file')
 
     my_parser.add_argument('-refineleft',
                            type=bool,
@@ -1291,46 +1170,3 @@ if __name__ == '__main__':
     # Execute the PVS simulation
 
     PVS_simulation(args)
-
-
-# python3 PVS_cyclessimulation.py -j REMsleepnew -lpvs 200e-4 -c0init constant -c0value 50 -sasbc scenarioA -cycle REMsleep -tend 420 -toutput 1 -dt 2e-2 -r -1 -nr 4 -nl 50 -d 2e-7
-
-# python3 PVS_cyclessimulation.py -lpvs 0.02 -c0init constant -c0valueSAS 0 -c0valuePVS 0 -sasbc scenarioA -tend 400 -toutput 1 -dt 0.005 -r -1 -nr 8 -nl 100 -d 5.617252598067515e-07 -refineleft True  -j quiet-prod-scenarioA -cycle quietwake -productionrate 1e-9
-
-# python3 PVS_cyclessimulation.py -lpvs 0.02 -c0init constant -c0valueSAS 0 -c0valuePVS 50 -sasbc scenarioB -tend 400 -toutput 1 -dt 0.1 -r -1 -nr 4 -nl 100 -d 1e-06 -refineleft True  -j test-awake-scenarioB -cycle quietwake -SAS True
-
-# todo : permettre couette
-# todo : permettre d'avoir la sortie masse avec le SAS
-# todo : entrance, clearance longueur x2 , clearance coeur 1 pc.
-
-# python3 PVS_cyclessimulation.py -lpvs 0.02 -c0init uniform -c0valueSAS 50 -c0valuePVS 0 -sasbc scenarioE -tend 400 -toutput 1 -dt 0.01 -r -1 -nr 4 -nl 100 -d 2e-07 -refineleft True  -j sleep_intake -cycle normalsleep -SAS True
-# python3 PVS_cyclessimulation.py -lpvs 0.02 -c0init uniform -c0valueSAS 50 -c0valuePVS 0 -sasbc scenarioE -tend 400 -toutput 1 -dt 0.01 -r -1 -nr 4 -nl 100 -d 2e-07 -refineleft True  -j awake_intake -cycle awake -SAS True
-
-
-# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.11720094253454381 -dt 0.003662529454204494 -r -1 -nr 6 -nl 600 -d 1.68e-07 -s 0.0001 -j intake-d2e-07-l6e-02-baseline -ai 0.0  -fi 0.1  -rv 0.0005771409125084831 -rpvs 0.0008571719617706034
-# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.11720094253454381 -dt 0.003662529454204494 -r -1 -nr 6 -nl 600 -d 1.68e-07 -s 0.0001 -j intake-d2e-07-l6e-02-baseline-LF -ai 0.010882310409788867  -fi 0.5332721618819639  -rv 0.0005771409125084831 -rpvs 0.0008571719617706034
-# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.1319294501872422 -dt 0.004122795318351319 -r -1 -nr 6 -nl 600 -d 1.68e-07 -s 0.0001 -j intake-d2e-07-l6e-02-baseline-VLF -ai 0.01807978819244458  -fi 0.23686902322148787  -rv 0.0005771409125084831 -rpvs 0.0008571719617706034
-# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.11720094253454381 -dt 0.003662529454204494 -r -1 -nr 6 -nl 600 -d 1.68e-07 -s 0.0001 -j intake-d2e-07-l6e-02-baseline-VLFLF -ai 0.01807978819244458 0.010882310409788867  -fi 0.23686902322148787 0.5332721618819639  -rv 0.0005771409125084831 -rpvs 0.0008571719617706034
-
-# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.1483434180540058 -dt 0.004635731814187681 -r -1 -nr 6 -nl 600 -d 1.68e-07 -s 0.0001 -j intake-d2e-07-l6e-02-stageNREM-VLF -ai 0.029500160082592375  -fi 0.21065983519823675  -rv 0.0005942645684061443 -rpvs 0.0008716330311360221
-# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.12570651571891367 -dt 0.003928328616216052 -r -1 -nr 6 -nl 600 -d 1.68e-07 -s 0.0001 -j intake-d2e-07-l6e-02-stageNREM-LF -ai 0.018064046048171124  -fi 0.49718982061163214  -rv 0.0005942645684061443 -rpvs 0.0008716330311360221
-# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.125706515718913678 -dt 0.003928328616216052 -r -1 -nr 6 -nl 600 -d 1.68e-07 -s 0.0001 -j intake-d2e-07-l6e-02-stageNREM-VLFLF -ai 0.029500160082592375 0.018064046048171124  -fi 0.21065983519823675 0.49718982061163214  -rv 0.0005942645684061443 -rpvs 0.0008716330311360221
-
-
-# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.14738356102969752 -dt 0.0046057362821780475 -r -1 -nr 6 -nl 600 -d 1.68e-07  -j intake-d2e-07-l6e-02-stageNREM-VLF-id48-6-1 -ai 0.030931344481521333  -fi 0.21203178822435415  -rv 0.0005785529361288647 -rpvs 0.0012499888181737389
-# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.14738356102969752 -dt 0.0046057362821780475 -r -1 -nr 6 -nl 600 -d 1.68e-07  -j intake-d2e-07-l6e-02-stageNREM-LF-id48-6-1 -ai 0.012812726766516033  -fi 0.5092662676310167  -rv 0.0005785529361288647 -rpvs 0.0012499888181737389
-# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init uniform -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.14738356102969752 -dt 0.0046057362821780475 -r -1 -nr 6 -nl 600 -d 1.68e-07  -j intake-d2e-07-l6e-02-stageNREM-VLFLF-id48-6-1 -ai 0.030931344481521333 0.012812726766516033  -fi 0.21203178822435415 0.5092662676310167  -rv 0.0005785529361288647 -rpvs 0.0012499888181737389
-
-
-# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init gaussian -c0valueSAS 0 -c0valuePVS 1 -sasbc scenarioA -tend 40 -toutput 0.20424737359238251 -dt 0.0031913652123809768 -r -1 -nr 8 -nl 600 -d 1.68e-07 -s 0.0002 -xi 0.03 -j diffusion-valid -ai 0  -fi 9.792047578498659  -rv 0.00042507948448012467 -rpvs 0.0012641418350997833
-
-# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init gaussian -c0valueSAS 0 -c0valuePVS 1 -sasbc scenarioA -tend 40 -toutput 0.20424737359238251 -dt 0.0031913652123809768 -r -1 -nr 8 -nl 600 -d 1.68e-07 -s 0.0002 -xi 0.03 -j dispersion-card -ai 0.0027089149267303936  -fi 9.792047578498659  -rv 0.00042507948448012467 -rpvs 0.0012641418350997833
-
-# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init gaussian -c0valueSAS 0 -c0valuePVS 1 -sasbc scenarioA -tend 10 -toutput 0.20424737359238251 -dt 0.005 -r -1 -nr 8 -nl 600 -d 1.68e-07 -s 0.0001 -xi 0.03 -j dispersion-card -ai 0.0027089149267303936  -fi 9.792047578498659  -rv 0.00042507948448012467 -rpvs 0.0012641418350997833
-
-
-### test erf
-
-# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init constant -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.20424737359238251 -dt 0.0031913652123809768 -r -1 -nr 8 -nl 600 -d 1.68e-07  -j diffusion-erfc -ai 0  -fi 9.792047578498659  -rv 0.00042507948448012467 -rpvs 0.0012641418350997833
-
-# python3 PVS_cyclessimulation.py -lpvs 0.06 -c0init constant -c0valueSAS 1 -c0valuePVS 0 -sasbc scenarioE -tend 20 -toutput 0.20424737359238251 -dt 0.0031913652123809768 -r -1 -nr 8 -nl 600 -d 1.68e-07  -j dispersion-erfc-card -ai 0.0027089149267303936  -fi 9.792047578498659  -rv 0.00042507948448012467 -rpvs 0.0012641418350997833
