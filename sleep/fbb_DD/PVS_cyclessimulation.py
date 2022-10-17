@@ -20,9 +20,6 @@ import sleep.fbb_DD.cylindrical as cyl
 
 from sleep.stages.readConfig import ReadCycle
 
-
-
-
 # Define line function for 1D slice evaluation
 def line_sample(line, f, fill=np.nan):
     values = fill*np.ones(len(line))
@@ -248,11 +245,11 @@ def PVS_simulation(args):
     logging.info('fi (Hz) : '+'%e '*len(fi) % tuple(fi))
     logging.info('phii (rad) : '+'%e '*len(phii) % tuple(phii))
 
-    if aSMC >= (1-max(ai)) :
-        logging.info('The area of SMC is larger than the deformation. Please chose a smaller value.')
+    if np.pi*(Rpvs**2-Rv**2)*(1-max(ai)) <= aSMC:
+        logging.info('The area of SMC is too large and Rv become larger than Rpvs. Please chose a smaller value.')
         logging.info('We change the SMC area to be half of free space after deformation.')
-        aSMC=(1-max(ai))/2
-        logging.info('new SMC initial area coverage : %e pc' % aSMC)
+        aSMC=np.pi*(Rpvs**2-Rv**2)*(1-max(ai))/2
+        logging.info('new SMC initial area coverage : %e cm2 ' % aSMC)
 
     logging.info('\n * Lateral BC')
     resistance = args.resistance
@@ -285,8 +282,8 @@ def PVS_simulation(args):
                                   
 
     # ai is the change of area
-    functionR = sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1-sum([a*cos(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))+aSMC*(Rpvs**2-Rv**2)) # displacement
-    functionUALE=sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1-sum([a*cos(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)]))+aSMC*(Rpvs**2-Rv**2))- sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1-sum([a*cos(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))+aSMC*(Rpvs**2-Rv**2)) 
+    functionR = sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1-sum([a*cos(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))+aSMC/np.pi) # displacement
+    functionUALE=sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1-sum([a*cos(2*pi*f*tnp1+phi) for a,f,phi in zip(ai,fi,phii)]))+aSMC/np.pi)- sqrt(Rpvs**2 -(Rpvs**2-Rv**2)*(1-sum([a*cos(2*pi*f*tn+phi) for a,f,phi in zip(ai,fi,phii)]))+aSMC/np.pi) 
         
 
     functionV = sympy.diff(functionR, tn)  # velocity
@@ -1033,7 +1030,7 @@ if __name__ == '__main__':
                            metavar='aSMC',
                            type=float,
                            default=0,
-                           help='pourcentage of the initial area occupied by smooth muscle cells (to be removed from the fluid domain)')                           
+                           help='constant cross section area occupied by the SMC (to be removed from the fluid domain)')                           
 
     my_parser.add_argument('-lpvs', '--length',
                            type=float,
