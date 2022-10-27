@@ -162,7 +162,7 @@ def PVS_simulation(args):
     logging.info('\n * Geometry')
     Rv = args.radius_vessel  # centimeters
     Rpvs = args.radius_pvs  # centimeters
-    aSMC=args.alpha_SMC # ratio
+    aSMC=args.alpha_SMC # surface area cm2
     L = args.length  # centimeters
 
     
@@ -170,7 +170,7 @@ def PVS_simulation(args):
     logging.info('Vessel radius : %e cm' % Rv)
     logging.info('PVS radius : %e cm' % Rpvs)
     logging.info('PVS length : %e cm' % L)
-    logging.info('SMC initial area coverage : %e pc' % aSMC)
+    logging.info('SMC initial area coverage : %e cm2' % aSMC)
 
     # test presence of the SAS compartment on the mesh
     isSAS = args.issas
